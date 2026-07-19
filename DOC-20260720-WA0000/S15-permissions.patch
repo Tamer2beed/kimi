@@ -1,0 +1,1425 @@
+diff --git a/package.json b/package.json
+index 536c03a..95ab450 100644
+--- a/package.json
++++ b/package.json
+@@ -6,7 +6,8 @@
+   "scripts": {
+     "start": "node server/index.js",
+     "dev": "nodemon server/index.js",
+-    "setup": "node setup-db.js"
++    "setup": "node setup-db.js",
++    "test": "node tests/rankGuard.test.js && node tests/integration.test.js"
+   },
+   "keywords": [
+     "chat",
+@@ -22,11 +23,12 @@
+     "dotenv": "^17.4.2",
+     "express": "^5.2.1",
+     "jsonwebtoken": "^9.0.3",
++    "mediasoup": "^3.14.0",
+     "mysql2": "^3.22.3",
+-    "socket.io": "^4.8.3",
+-    "mediasoup": "^3.14.0"
++    "socket.io": "^4.8.3"
+   },
+   "devDependencies": {
+-    "nodemon": "^3.0.0"
++    "nodemon": "^3.0.0",
++    "socket.io-client": "^4.8.3"
+   }
+ }
+diff --git a/public/chat.html b/public/chat.html
+index 7c04186..d327b6a 100644
+--- a/public/chat.html
++++ b/public/chat.html
+@@ -679,7 +679,7 @@ html,body{overscroll-behavior-x:none!important;}
+   <div class="sm-item" onclick="reportRoom()">
+     <span class="sm-icon">🚨</span><span class="sm-label">تبليغ</span>
+   </div>
+-  <div id="adminMenuSection" style="display:none">
++  <div id="adminMenuSection" style="display:none" data-min-rank="500">
+     <div class="sm-divider"></div>
+     <div class="sm-section-label">إدارة الغرفة</div>
+     <div class="sm-item" onclick="openBannerEditor();closeSideMenu()">
+@@ -841,6 +841,7 @@ html,body{overscroll-behavior-x:none!important;}
+ 
+ <!-- ══ JS — يُحمَّل حسب الرتبة ══ -->
+ <script src="/socket.io/socket.io.js"></script>
++<script src="/js/guard.js"></script>
+ <script src="/js/core.js"></script>
+ <script src="/js/ui.js"></script>
+ <script src="/js/sounds.js"></script>
+diff --git a/public/js/core.js b/public/js/core.js
+index a9611a0..9f66da1 100644
+--- a/public/js/core.js
++++ b/public/js/core.js
+@@ -46,6 +46,9 @@ function formatTime(date) {
+ /* ── Socket.io ─────────────────────────── */
+ const socket = io({ auth: { token } });
+ 
++/* [S15] التحقق المزدوج — اعتراض الأحداث فوق رتبة المستخدم قبل إرسالها */
++if (window.Guard) Guard.wrapSocket(socket);
++
+ socket.on('connect', () => {
+   socket.emit('joinRoom', {
+     room_id: roomId, username, user_id: userId, rank: userRank
+@@ -53,8 +56,10 @@ socket.on('connect', () => {
+   /* أعلم بقية الملفات أن socket جاهز */
+   document.dispatchEvent(new Event('socketReady'));
+ 
+-  /* إظهار أزرار المشرفين */
+-  if (userRank >= 500) {
++  /* إظهار أزرار المشرفين — [S15] عبر Guard (data-min-rank) + فحص التوكن */
++  if (window.Guard) {
++    Guard.apply();
++  } else if (userRank >= 500) {
+     const adminSection = document.getElementById('adminMenuSection');
+     if (adminSection) adminSection.style.display = 'block';
+   }
+diff --git a/public/js/guard.js b/public/js/guard.js
+new file mode 100644
+index 0000000..ff4c06c
+--- /dev/null
++++ b/public/js/guard.js
+@@ -0,0 +1,126 @@
++'use strict';
++/* ════════════════════════════════════════════════════════════════
++   WidBid — public/js/guard.js   [S15 — Client-side Guard]
++   ════════════════════════════════════════════════════════════════
++   التحقق المزدوج — نصفه الثاني (الأول: server/rankGuard.js)
++
++   المهام (وثيقة S14 — البند 3):
++   1) إخفاء/تعطيل كل زر أو ميزة رتبتها أعلى من رتبة المستخدم
++      عبر السمة:  data-min-rank="500"
++   2) intercept لـ socket.emit — حتى لو أُرسل request يدوياً من
++      الكونسول، يُحذَر المستخدم (والخادم يرفضه على أي حال)
++   3) تصدير Guard API عام: Guard.can() / Guard.rank / Guard.RANKS
++════════════════════════════════════════════════════════════════ */
++
++(function () {
++  /* ── الرتب الـ 12 ── */
++  const RANKS = Object.freeze({
++    GUEST: 100, MEMBER: 200, PROTECTED: 300, ROYAL: 400,
++    ADMIN: 500, SUPER_ADMIN: 600, MASTER: 700, SUPER_MASTER: 800,
++    ROOT: 900, SUPER_ROOT: 1000, OWNER: 1100, SUPER_OWNER: 1200,
++  });
++
++  /* ── الحد الأدنى للرتبة لكل حدث صادر (مرآة لجدول الخادم) ── */
++  const EMIT_MIN_RANK = Object.freeze({
++    sendImage: 200, raiseHand: 200,
++    clearChat: 500, clearRoomChat: 500, muteUser: 500, unmuteUser: 500,
++    kickUser: 500, muteAll: 500, unmuteAll: 500, freezeUser: 500,
++    unfreezeUser: 500, setBanner: 500, speakerExtend: 500,
++    speakerRevoke: 500, speakerSkip: 500, speakerGiveTo: 500,
++    warnUser: 600, announcement: 600, systemMessage: 600,
++    getAdminsList: 600, getMutedList: 600,
++    setWelcome: 700, assignRole: 700, banIP: 700, controlAllMics: 700,
++    getRoomReport: 700,
++    banDevice: 800, lockRoom: 800,
++    setTheme: 900, registerDevice: 900,
++    getSuperRootRooms: 1000, getSuperRootReport: 1000,
++    getMySuperRootRoots: 1000, superRootBroadcast: 1000,
++    transferMember: 1000, createRoot: 1000,
++    getOwnerRooms: 1100, freezeRoom: 1100, unfreezeRoom: 1100, deleteRoom: 1100,
++    getPlatformStats: 1200, getAllOwners: 1200, getPlatformTree: 1200,
++    createOwner: 1200, freezeOwner: 1200, unfreezeOwner: 1200,
++    updateOwnerQuota: 1200, platformBroadcast: 1200, emergencyFreeze: 1200,
++    emergencyUnfreeze: 1200, permanentBan: 1200, emergencyCloseRoom: 1200,
++    emergencyAlert: 1200,
++  });
++
++  /* ── رتبة المستخدم الحالية (من الـ JWT إن أمكن، وإلا localStorage) ── */
++  function _rankFromJWT() {
++    try {
++      const t = localStorage.getItem('token') || '';
++      if (!t || t.startsWith('guest_')) return null;
++      const payload = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
++      return payload.rank || null;   /* توكن الزائر يحمل rank:100 — العضو يعتمد على localStorage */
++    } catch { return null; }
++  }
++
++  const Guard = {
++    RANKS,
++    get rank() {
++      return _rankFromJWT() ?? (parseInt(localStorage.getItem('rank')) || 100);
++    },
++    can(minRank) { return Guard.rank >= minRank; },
++
++    /* ── تطبيق الإخفاء على كل العناصر الموسومة data-min-rank ── */
++    apply(root = document) {
++      const r = Guard.rank;
++      root.querySelectorAll('[data-min-rank]').forEach((el) => {
++        const need = parseInt(el.dataset.minRank) || 100;
++        const ok = r >= need;
++        el.classList.toggle('guard-hidden', !ok);
++        el.style.display = ok ? '' : 'none';
++        el.setAttribute('aria-hidden', ok ? 'false' : 'true');
++      });
++    },
++
++    /* ── مراقبة تغيّر الرتبة (ترقية أثناء الجلسة) وإعادة التطبيق ── */
++    watch() {
++      let last = Guard.rank;
++      setInterval(() => {
++        const now = Guard.rank;
++        if (now !== last) { last = now; Guard.apply(); }
++      }, 2000);
++    },
++
++    /* ── اعتراض socket.emit — التحقق المزدوج قبل الإرسال ── */
++    wrapSocket(socket) {
++      if (!socket || socket._guardWrapped) return socket;
++      const orig = socket.emit.bind(socket);
++      socket.emit = function (event, ...args) {
++        const need = EMIT_MIN_RANK[event];
++        if (need && Guard.rank < need) {
++          console.warn(`🛡️ [Guard] مُنع إرسال "${event}" — يتطلب رتبة ${need}+ وأنت ${Guard.rank}`);
++          orig('error', '⛔ صلاحية غير كافية لهذا الإجراء');
++          return socket;
++        }
++        return orig(event, ...args);
++      };
++      socket._guardWrapped = true;
++      return socket;
++    },
++  };
++
++  /* ── حقن CSS صغير للإخفاء ── */
++  const style = document.createElement('style');
++  style.textContent = '.guard-hidden{display:none!important}';
++  document.head.appendChild(style);
++
++  /* ── تطبيق تلقائي عند جاهزية DOM + مراقبة العناصر الجديدة ── */
++  const boot = () => {
++    Guard.apply();
++    Guard.watch();
++    /* عناصر تُبنى ديناميكياً (مودالات/قوائم) → أعد التطبيق عند ظهورها */
++    new MutationObserver((muts) => {
++      for (const m of muts) {
++        if (m.addedNodes.length) { Guard.apply(); break; }
++      }
++    }).observe(document.body, { childList: true, subtree: true });
++  };
++  if (document.readyState === 'loading') {
++    document.addEventListener('DOMContentLoaded', boot);
++  } else {
++    boot();
++  }
++
++  window.Guard = Guard;
++})();
+diff --git a/public/rooms.html b/public/rooms.html
+index beecb9f..7592e3d 100644
+--- a/public/rooms.html
++++ b/public/rooms.html
+@@ -656,7 +656,7 @@ html,body { height:100%; font-family:'Tajawal',sans-serif; background:var(--bg);
+ </div>
+ 
+ <!-- FAB — يظهر فقط للـ Owner (1100)+ -->
+-<div class="fab" id="fab" onclick="openCreateModal()">＋</div>
++<div class="fab" id="fab" data-min-rank="1100" onclick="openCreateModal()">＋</div>
+ 
+ <!-- MODAL إنشاء غرفة -->
+ <div class="overlay" id="overlay" onclick="closeModal(event)">
+@@ -762,6 +762,7 @@ html,body { height:100%; font-family:'Tajawal',sans-serif; background:var(--bg);
+ 
+ <div class="toast" id="toast"></div>
+ 
++<script src="/js/guard.js"></script>
+ <script>
+ /* ══════════════════════════════════
+    STATE
+diff --git a/server/index.js b/server/index.js
+index fd9fb7e..427b696 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -10,6 +10,9 @@ require('dotenv').config();
+ const { initWorker, getOrCreateRoom, createTransport, sfuRooms, cleanupRoom } = require('./mediasoup');
+ const { initBots, getBotUsers } = require('./bots');
+ 
++/* [S15] حارس الصلاحيات المركزي — وثيقة S14 (المرحلة التالية) */
++const { installSocketGuard, authenticateJoin } = require('./rankGuard');
++
+ /* نظام التجميد — مستوى الـ module */
+ const frozenUsers = new Map();
+ 
+@@ -40,6 +43,9 @@ app.use(express.static('public'));
+ 
+ app.get('/', (req, res) => res.send('WidBid Server Running ✅'));
+ 
++/* [S15] تفعيل حارس الصلاحيات على كل أحداث Socket.io */
++installSocketGuard(io);
++
+ /* ════════════════════════════════════════════════
+    أدوات مساعدة
+ ════════════════════════════════════════════════ */
+@@ -217,20 +223,25 @@ io.on('connection', (socket) => {
+ 
+   /* ─── دخول الغرفة ─────────────────────────── */
+   socket.on('joinRoom', async (data) => {
++    /* [S15] الهوية تُشتق من JWT فقط — لا يُقبل username/user_id/rank من العميل
++       (قبل هذا الإصلاح كان أي زائر يستطيع إرسال أي user_id فينتحل حساباً برتبته) */
++    const identity = authenticateJoin(socket, data);
++    const username = identity.username;
++    const user_id  = identity.user_id;
++
+     /* تحقق من التجميد */
+-    const joiningUser = socket.userData?.username || data?.username;
+-    if (joiningUser && frozenUsers.has(joiningUser)) {
+-      const info = frozenUsers.get(joiningUser);
++    if (username && frozenUsers.has(username)) {
++      const info = frozenUsers.get(username);
+       socket.emit('error', `🧊 حسابك مجمّد بواسطة ${info.by} — تواصل مع إدارة الغرفة`);
+       return;
+     }
+-    const { room_id, username, user_id, rank } = data;
++    const { room_id } = data;
+     if (!room_id || !username) return;
+ 
+     socket.join(room_id);
+ 
+-    // تحميل الرتبة من DB إذا كان المستخدم مسجلاً
+-    const dbRank = user_id ? await getUserRank(user_id) : (rank || 100);
++    // الرتبة: من DB للعضو الموثّق، أو 100 للزائر — لا تُقرأ من العميل أبداً
++    const dbRank = user_id ? await getUserRank(user_id) : 100;
+ 
+     // تخزين بيانات المستخدم على الـ socket
+     socket.userData = {
+@@ -283,7 +294,7 @@ io.on('connection', (socket) => {
+ 
+   /* ─── إرسال رسالة ─────────────────────────── */
+   socket.on('sendMessage', async (data) => {
+-    const { room_id, user_id, message, username, rank } = data;
++    const { room_id, message } = data;
+     if (!message?.trim() || !room_id) return;
+ 
+     // فحص الكتم
+@@ -292,7 +303,10 @@ io.on('connection', (socket) => {
+       return;
+     }
+ 
+-    const senderRank = socket.userData?.rank || rank || 100;
++    /* [S15] الهوية من socket.userData فقط (مصدرها JWT/DB) */
++    const user_id    = socket.userData?.user_id || null;
++    const username   = socket.userData?.username;
++    const senderRank = socket.userData?.rank || 100;
+ 
+     try {
+       let msgId = null;
+@@ -307,7 +321,7 @@ io.on('connection', (socket) => {
+ 
+       io.to(room_id).emit('newMessage', {
+         id       : msgId,
+-        username : username || socket.userData?.username,
++        username,
+         message,
+         rank     : senderRank,
+         avatar   : socket.userData?.avatar || 'av1.svg',
+@@ -321,12 +335,21 @@ io.on('connection', (socket) => {
+ 
+   /* ── مسح شات الغرفة كاملاً (المشرف 500+) ── */
+   /* ── مسح رسالة واحدة (صاحبها فقط أو مشرف) ── */
+-  socket.on('deleteMessage', async ({ room_id, msg_id, by }) => {
++  socket.on('deleteMessage', async ({ room_id, msg_id }) => {
+     const senderRank = socket.userData?.rank || 0;
+-    const isOwner    = socket.userData?.username === by;
+-    if (!isOwner && senderRank < 500) return;
++    const myUserId   = socket.userData?.user_id;
+     try {
+       if (msg_id) {
++        /* [S15] الملكية تُثبَت من DB لا من حقل "by" القادم من العميل
++           (كان by قابلاً للتزوير — أي شخص يمرر اسم صاحب الرسالة) */
++        if (senderRank < 500) {
++          if (!myUserId) return;
++          const [own] = await db.query(
++            'SELECT 1 FROM messages WHERE id = ? AND room_id = ? AND sender_id = ? LIMIT 1',
++            [msg_id, room_id, myUserId]
++          );
++          if (!own.length) return;
++        }
+         await db.query('DELETE FROM messages WHERE id = ? AND room_id = ?', [msg_id, room_id]);
+       }
+       io.to(String(room_id)).emit('messageDeleted', { msg_id });
+@@ -748,12 +771,12 @@ io.on('connection', (socket) => {
+ 
+   /* ── إرسال صورة ─────────────────────── */
+   socket.on('sendImage', async (data) => {
+-    const { room_id, username, rank, image, caption } = data;
++    const { room_id, image, caption } = data;
+     if (!image || !room_id) return;
+-    /* بث الصورة لجميع أعضاء الغرفة */
++    /* [S15] الهوية من socket.userData فقط — لا تُقبل من العميل */
+     io.to(String(room_id)).emit('newImage', {
+-      username: username || socket.userData?.username || 'مجهول',
+-      rank:     rank     || socket.userData?.rank     || 100,
++      username: socket.userData?.username || 'مجهول',
++      rank:     socket.userData?.rank     || 100,
+       image,
+       caption:  caption  || '',
+       time:     new Date().toISOString(),
+@@ -765,7 +788,12 @@ io.on('connection', (socket) => {
+   ════════════════════════════════════════════════ */
+ 
+   socket.on('speakerRequest', (data) => {
+-    const { room_id, username, rank } = data;
++    /* [S15] الهوية والرتبة من socket.userData فقط — لا تُقبل من العميل
++       (كان أي مستخدم يستطيع إرسال rank مزيّف ليتقدم في الطابور).
++       ملاحظة: rankGuard يفرض joined:true لهذا الحدث فـ userData موجود دائماً */
++    const room_id  = data.room_id;
++    const username = socket.userData.username;
++    const rank     = socket.userData.rank;
+     const rid = String(room_id);
+     console.log(`🔍 [DEBUG] speakerRequest وصل: room=${rid} user=${username} rank=${rank}`);
+ 
+@@ -1071,7 +1099,9 @@ io.on('connection', (socket) => {
+   });
+ 
+   socket.on('getMyDevices', async (data) => {
+-    const { user_id } = data;
++    /* [S15] user_id من الجلسة الموثّقة فقط — لا يُقبل من العميل */
++    const user_id = socket.userData?.user_id;
++    if (!user_id) return socket.emit('myDevices', []);
+     try {
+       const [rows] = await db.query(
+         'SELECT device_id, device_name, registered_at FROM user_devices WHERE user_id = ?',
+@@ -1082,7 +1112,9 @@ io.on('connection', (socket) => {
+   });
+ 
+   socket.on('removeDevice', async (data) => {
+-    const { user_id, device_id } = data;
++    const user_id = socket.userData?.user_id;
++    if (!user_id) return;
++    const { device_id } = data;
+     try {
+       await db.query('DELETE FROM user_devices WHERE user_id=? AND device_id=?', [user_id, device_id]);
+     } catch {}
+diff --git a/server/rankGuard.js b/server/rankGuard.js
+new file mode 100644
+index 0000000..5c47f0a
+--- /dev/null
++++ b/server/rankGuard.js
+@@ -0,0 +1,448 @@
++'use strict';
++/* ════════════════════════════════════════════════════════════════
++   WidBid — server/rankGuard.js   [S15 — نظام الصلاحيات]
++   ════════════════════════════════════════════════════════════════
++   حارس الصلاحيات المركزي لكل أحداث Socket.io
++
++   يطبّق ما ورد في وثيقة S14 (المرحلة التالية — S15):
++   1) JWT + rank قبل كل socket event
++   2) Socket Event Validation  (توكن صالح؟ رتبة تكفي؟ الهدف أدنى؟)
++   3) جدول الصلاحيات الكامل لـ 12 رتبة
++   4) التحقق المزدوج (Server-side — النصف الثاني في public/js/guard.js)
++
++   ومن الدستور (Qwen_markdown §19):
++   - مصفوفة الطرد 19.3  (الحصانة الملكية + حصانة المحمي)
++   - نظام الحصانة 19.4  (أوزان الرتب + حصانة خط النسب)
++════════════════════════════════════════════════════════════════ */
++
++const jwt = require('jsonwebtoken');
++const db  = require('./db');
++
++if (!process.env.JWT_SECRET) {
++  throw new Error('❌ JWT_SECRET غير موجود في متغيرات البيئة (.env)');
++}
++const JWT_SECRET = process.env.JWT_SECRET;
++
++/* ════════════════════════════════════════════════
++   1) الرتب الـ 12
++════════════════════════════════════════════════ */
++const RANKS = Object.freeze({
++  GUEST       : 100,
++  MEMBER      : 200,
++  PROTECTED   : 300,
++  ROYAL       : 400,
++  ADMIN       : 500,
++  SUPER_ADMIN : 600,
++  MASTER      : 700,
++  SUPER_MASTER: 800,
++  ROOT        : 900,
++  SUPER_ROOT  : 1000,
++  OWNER       : 1100,
++  SUPER_OWNER : 1200,
++});
++
++/* ════════════════════════════════════════════════
++   2) جدول صلاحيات الأحداث الكامل
++   ─────────────────────────────────────────────
++   min      : أدنى رتبة مطلوبة
++   joined   : يشترط أن يكون المستخدم داخل غرفة (userData)
++   target   : اسم الحقل الذي يحمل اسم الهدف — يفعّل فحص
++              (الفاعل > الهدف) + الحصانات
++   action   : نوع الإجراء ضمن مصفوفة 19.3
++              kick | mute | ban | role
++   self     : حقل user_id — يمنع قراءة/تعديل بيانات الغير
++   assignRank: رتبة ثابتة يمنحها الحدث (createRoot/createOwner)
++   open     : حدث دخول — تُعالج مصادقته داخل الـ handler
++════════════════════════════════════════════════ */
++const EVENT_PERMISSIONS = Object.freeze({
++  /* ── الدخول والدردشة الأساسية ── */
++  joinRoom            : { open: true },
++  sendMessage         : { min: 100, joined: true },
++  sendImage           : { min: 200, joined: true },   /* عضو فأعلى — S14 */
++  deleteMessage       : { min: 100, joined: true },   /* الملكية تُفحص في الـ handler */
++  leaveRoom           : { min: 100, joined: true },
++  setStatus           : { min: 100, joined: true },
++  micOn               : { min: 100, joined: true },
++  micOff              : { min: 100, joined: true },
++  raiseHand           : { min: 200, joined: true },   /* عضو فأعلى — S14 */
++  reportRoom          : { min: 100 },
++  joinRoom_speakerSync: { min: 100 },
++
++  /* ── الإشراف (500+ / 600+) ── */
++  clearChat           : { min: 500 },
++  clearRoomChat       : { min: 500 },
++  muteUser            : { min: 500, target: 'target', action: 'mute' },
++  unmuteUser          : { min: 500, target: 'target', action: 'mute' },
++  kickUser            : { min: 500, target: 'target', action: 'kick' },
++  muteAll             : { min: 500 },
++  unmuteAll           : { min: 500 },
++  freezeUser          : { min: 500, target: 'target', action: 'kick' },
++  unfreezeUser        : { min: 500 },
++  setBanner           : { min: 500 },
++  warnUser            : { min: 600, target: 'target', action: 'mute' },
++  announcement        : { min: 600 },
++  systemMessage       : { min: 600 },   /* كان مفتوحاً للجميع — ثغرة! */
++  getAdminsList       : { min: 600 },
++  getMutedList        : { min: 600 },
++  getRoomStats        : { min: 500 },
++
++  /* ── ماستر / سوبر ماستر (700+ / 800+) ── */
++  setWelcome          : { min: 700 },
++  assignRole          : { min: 700, target: 'target', action: 'role' },
++  banIP               : { min: 700, target: 'target', action: 'ban' },
++  controlAllMics      : { min: 700 },
++  getRoomReport       : { min: 700 },
++  banDevice           : { min: 800, target: 'target', action: 'ban' },
++  lockRoom            : { min: 800 },
++
++  /* ── روت / سوبر روت (900+ / 1000+) ── */
++  setTheme            : { min: 900 },
++  registerDevice      : { min: 900 },
++  getSuperRootRooms   : { min: 1000, self: 'user_id' },
++  getSuperRootReport  : { min: 1000 },
++  getMySuperRootRoots : { min: 1000, self: 'user_id' },
++  superRootBroadcast  : { min: 1000 },
++  transferMember      : { min: 1000, target: 'target', action: 'ban' },
++  createRoot          : { min: 1000, target: 'target', action: 'role', assignRank: 900 },
++
++  /* ── أونر (1100+) ── */
++  getOwnerRooms       : { min: 1100, self: 'user_id' },
++  freezeRoom          : { min: 1100 },
++  unfreezeRoom        : { min: 1100 },
++  deleteRoom          : { min: 1100 },
++
++  /* ── سوبر أونر (1200) ── */
++  getPlatformStats    : { min: 1200 },
++  getAllOwners        : { min: 1200 },
++  getPlatformTree     : { min: 1200 },
++  createOwner         : { min: 1200, target: 'target', action: 'role', assignRank: 1100 },
++  freezeOwner         : { min: 1200, target: 'target', action: 'ban' },
++  unfreezeOwner       : { min: 1200, target: 'target' },
++  updateOwnerQuota    : { min: 1200, target: 'target' },
++  platformBroadcast   : { min: 1200 },
++  emergencyFreeze     : { min: 1200, target: 'target', action: 'ban' },
++  emergencyUnfreeze   : { min: 1200, target: 'target' },
++  permanentBan        : { min: 1200, target: 'target', action: 'ban' },
++  emergencyCloseRoom  : { min: 1200 },
++  emergencyAlert      : { min: 1200 },
++
++  /* ── السبيكر ── */
++  speakerRequest      : { min: 100, joined: true },
++  speakerDone         : { min: 100, joined: true },
++  speakerLeaveQueue   : { min: 100, joined: true },
++  speakerExtend       : { min: 500 },
++  speakerRevoke       : { min: 500 },
++  speakerSkip         : { min: 500 },
++  speakerGiveTo       : { min: 500 },
++
++  /* ── الألعاب ── */
++  joinGame            : { min: 100, joined: true },
++  gameMove            : { min: 100, joined: true },
++  restartGame         : { min: 100, joined: true },
++
++  /* ── البث المرئي P2P ── */
++  startBroadcast      : { min: 100, joined: true },
++  stopBroadcast       : { min: 100, joined: true },
++  requestWatch        : { min: 100, joined: true },
++  broadcastAnswer     : { min: 100, joined: true },
++  'webrtc:answer'     : { min: 100, joined: true },
++  'webrtc:ice'        : { min: 100, joined: true },
++
++  /* ── الصوت SFU (Mediasoup) ── */
++  'audio:getCapabilities'    : { min: 100, joined: true },
++  'audio:createSendTransport': { min: 100, joined: true },
++  'audio:createRecvTransport': { min: 100, joined: true },
++  'audio:connectTransport'   : { min: 100, joined: true },
++  'audio:produce'            : { min: 100, joined: true },
++  'audio:consume'            : { min: 100, joined: true },
++
++  /* ── الأجهزة والكوتة (بيانات شخصية) ── */
++  getMyDevices        : { min: 100, self: 'user_id' },
++  removeDevice        : { min: 100, self: 'user_id' },
++  getQuota            : { min: 100 },
++});
++
++/* ════════════════════════════════════════════════
++   3) مصفوفة الطرد والحصانة — الدستور §19.3 / §19.4
++════════════════════════════════════════════════ */
++
++/* سقف أعلى رتبة يمكن استهدافها لكل فاعل — مطابق حرفياً لمصفوفة 19.3
++   (المصفوفة ليست "أكبر من" فقط: المشرف يطرد زائر/عضو فقط، والروت يقف عند ماستر) */
++const ACTION_CEILING = [
++  [RANKS.SUPER_OWNER, 1100],
++  [RANKS.OWNER,       1000],
++  [RANKS.SUPER_ROOT,   900],
++  [RANKS.ROOT,         700],
++  [RANKS.SUPER_MASTER, 700],
++  [RANKS.MASTER,       500],
++  [RANKS.SUPER_ADMIN,  400],
++  [RANKS.ADMIN,        200],
++];
++function actionCeiling(actorRank) {
++  for (const [min, ceil] of ACTION_CEILING) {
++    if (actorRank >= min) return ceil;
++  }
++  return -1;
++}
++
++/**
++ * هل يستطيع الفاعل تنفيذ action على الهدف؟ — الدستور §19.3 + §19.4
++ *  1) الفاعل مشرف (500+) على الأقل
++ *  2) رتبة الهدف ضمن سقف الفاعل (جدول 19.3 — ليست مجرد "أقل من الفاعل")
++ *  3) المحمي (300) محصّن إلا من سوبر ماستر (800+)
++ *  4) الحظر: 600+ كحد أدنى، والملكي (400+) لا يحظره إلا ماستر (700+)
++ *     (سوبر أدمن يطرد الملكي لكن لا يحظره — حاشية 19.3)
++ */
++function canActOn(actorRank, targetRank, action = 'kick') {
++  actorRank  = actorRank  || 0;
++  targetRank = targetRank || 0;
++
++  if (actorRank < RANKS.ADMIN) return false;              /* أقل من مشرف: لا إجراءات */
++  if (actorRank <= targetRank) return false;              /* الهدف أعلى/مساوٍ: ممنوع */
++  if (targetRank > actionCeiling(actorRank)) return false; /* فوق سقف الفاعل: ممنوع */
++
++  /* حصانة الاسم المحمي (300) — لا يُطرد/يُكتم/يُحظر إلا من 800+ */
++  if (targetRank === RANKS.PROTECTED && actorRank < RANKS.SUPER_MASTER) return false;
++
++  if (action === 'ban') {
++    if (actorRank < RANKS.SUPER_ADMIN) return false;
++    /* الملكي فأعلى لا يحظرهم إلا ماستر فأعلى */
++    if (targetRank >= RANKS.ROYAL && actorRank < RANKS.MASTER) return false;
++  }
++  return true;
++}
++
++/* سقوف الترقية حسب رتبة الفاعل — جدول S14:
++   700→حتى 500 | 800→حتى 600 | 900→لا ترقية | 1000→حتى 800 | 1100→حتى 1000 | 1200→حتى 1100 */
++const ASSIGN_CEILINGS = [
++  [RANKS.SUPER_OWNER, 1100],
++  [RANKS.OWNER,       1000],
++  [RANKS.SUPER_ROOT,   800],
++  [RANKS.ROOT,           0],   /* روت: تعديل إعدادات الغرفة فقط */
++  [RANKS.SUPER_MASTER, 600],
++  [RANKS.MASTER,       500],
++];
++function maxAssignableRank(actorRank) {
++  for (const [min, ceil] of ASSIGN_CEILINGS) {
++    if (actorRank >= min) return ceil;
++  }
++  return 0;
++}
++
++/* ════════════════════════════════════════════════
++   4) حصانة خط النسب (Lineage Immunity — §19.4.2)
++   يمنع "الابن" من معاقبة "الأب" الذي أنشأ حسابه
++════════════════════════════════════════════════ */
++async function isLineageParent(actorUserId, targetUsername) {
++  if (!actorUserId || !targetUsername) return false;
++  try {
++    const [rows] = await db.query(
++      `SELECT 1 FROM users a
++       JOIN users t ON t.username = ?
++       WHERE a.id = ? AND (t.id = a.owner_id OR t.id = a.super_root_id)
++       LIMIT 1`,
++      [targetUsername, actorUserId]
++    );
++    return rows.length > 0;
++  } catch { return false; }
++}
++
++/* ════════════════════════════════════════════════
++   5) مصادقة الدخول — JWT هو المصدر الوحيد للهوية
++   (يُستدعى من handler الخاص بـ joinRoom)
++════════════════════════════════════════════════ */
++function authenticateJoin(socket, data) {
++  const token = socket.handshake?.auth?.token || data?.token || '';
++  const sanitize = (n) => String(n || 'زائر').trim().slice(0, 50) || 'زائر';
++
++  if (token && !token.startsWith('guest_')) {
++    try {
++      const p = jwt.verify(token, JWT_SECRET);
++      if (p.isGuest) {
++        /* زائر موثّق بتوكن رسمي من /api/auth/guest */
++        return { username: sanitize(p.username), user_id: null, rank: RANKS.GUEST, isGuest: true, authed: true };
++      }
++      /* عضو مسجّل — الرتبة تُجلب من DB في الـ handler (مصدر الحقيقة) */
++      return { username: sanitize(p.username), user_id: p.id, rank: null, isGuest: false, authed: true };
++    } catch { /* توكن فاسد/منتهٍ → نزّله لزائر */ }
++  }
++  /* بدون توكن صالح → زائر صرف، لا يُقبل user_id ولا rank من العميل أبداً */
++  return { username: sanitize(data?.username), user_id: null, rank: RANKS.GUEST, isGuest: true, authed: false };
++}
++
++/* ════════════════════════════════════════════════
++   6) فحص حدث واحد (قلب الحارس)
++════════════════════════════════════════════════ */
++const _warnedUnknown = new Set();
++
++async function resolveTargetRank(io, socket, data, targetName) {
++  /* أولاً: ابحث بين متصلي الغرفة (أسرع وأدق للحالة الحية) */
++  const rid = String(data?.room_id || socket.userData?.room_id || '');
++  if (rid) {
++    try {
++      const socks = await io.in(rid).fetchSockets();
++      const ts = socks.find(s => s.userData?.username === targetName);
++      if (ts) return ts.userData?.rank ?? RANKS.GUEST;
++    } catch {}
++  }
++  /* ثانياً: من قاعدة البيانات (هدف غير متصل) */
++  try {
++    const [rows] = await db.query('SELECT rank FROM users WHERE username = ?', [targetName]);
++    if (rows.length) return rows[0].rank ?? RANKS.GUEST;
++  } catch {}
++  return null; /* هدف مجهول (ربما بوت أو زائر) */
++}
++
++async function checkEvent(io, socket, event, data) {
++  const perm = EVENT_PERMISSIONS[event];
++
++  /* حدث غير معروف: نسمح مع تحذير للمطور (أول مرة فقط) —
++     كل الأحداث الحالية مسجّلة في الجدول أعلاه */
++  if (!perm) {
++    if (!_warnedUnknown.has(event)) {
++      _warnedUnknown.add(event);
++      console.warn(`⚠️ [rankGuard] حدث غير مسجّل في جدول الصلاحيات: "${event}" — أضفه إلى EVENT_PERMISSIONS`);
++    }
++    return { ok: true };
++  }
++  if (perm.open) return { ok: true };
++
++  const actorRank = socket.userData?.rank;
++
++  /* قبل الدخول لغرفة: نسمح فقط بأحداث الزائر (min ≤ 100) */
++  if (actorRank === undefined || actorRank === null) {
++    if ((perm.min || 0) <= RANKS.GUEST && !perm.joined) return { ok: true };
++    return { ok: false, message: '⛔ يجب دخول غرفة أولاً', code: 'NOT_JOINED' };
++  }
++
++  if (perm.joined && !socket.userData) {
++    return { ok: false, message: '⛔ يجب دخول غرفة أولاً', code: 'NOT_JOINED' };
++  }
++
++  /* الحد الأدنى للرتبة */
++  if (actorRank < perm.min) {
++    return { ok: false, message: '⛔ صلاحية غير كافية لهذا الإجراء', code: 'LOW_RANK' };
++  }
++
++  /* نطاق "البيانات الشخصية": لا تقرأ/تعدّل بيانات غيرك (إلا سوبر أونر 1200) */
++  if (perm.self && data && data[perm.self] && socket.userData?.user_id
++      && Number(data[perm.self]) !== Number(socket.userData.user_id)
++      && actorRank < RANKS.SUPER_OWNER) {
++    return { ok: false, message: '⛔ لا يمكنك الوصول لبيانات مستخدم آخر', code: 'SCOPE' };
++  }
++
++  /* فحوصات الهدف */
++  if (perm.target && data && data[perm.target]) {
++    const targetName = String(data[perm.target]);
++
++    if (targetName === socket.userData?.username) {
++      return { ok: false, message: '⛔ لا يمكنك تنفيذ هذا الإجراء على نفسك', code: 'SELF' };
++    }
++
++    const targetRank = await resolveTargetRank(io, socket, data, targetName);
++
++    if (targetRank !== null) {
++      /* مصفوفة 19.3 + أوزان 19.4.1 */
++      if (perm.action && perm.action !== 'role' && !canActOn(actorRank, targetRank, perm.action)) {
++        return { ok: false, message: '⛔ لا يمكنك تنفيذ هذا الإجراء على رتبة أعلى أو مساوية (أو محصّنة)', code: 'IMMUNE' };
++      }
++      if ((!perm.action || perm.action === 'role') && actorRank <= targetRank) {
++        return { ok: false, message: '⛔ لا يمكنك استهداف رتبة أعلى أو مساوية لك', code: 'IMMUNE' };
++      }
++      /* حصانة خط النسب 19.4.2 */
++      if (perm.action && await isLineageParent(socket.userData?.user_id, targetName)) {
++        return { ok: false, message: '⛔ حصانة النسب: لا يمكن معاقبة من أنشأ حسابك', code: 'LINEAGE' };
++      }
++    }
++
++    /* سقف الترقية — إسناد رتبة متغيرة (assignRole) */
++    if (perm.action === 'role' && data.new_rank !== undefined) {
++      const newRank = Number(data.new_rank);
++      const ceil = maxAssignableRank(actorRank);
++      if (!Number.isFinite(newRank) || newRank < RANKS.GUEST) {
++        return { ok: false, message: '⛔ رتبة غير صالحة', code: 'BAD_RANK' };
++      }
++      if (newRank > ceil) {
++        return { ok: false, message: `⛔ أقصى رتبة يمكنك تعيينها: ${ceil}`, code: 'CEILING' };
++      }
++      if (newRank >= actorRank) {
++        return { ok: false, message: '⛔ لا يمكنك تعيين رتبة أعلى أو مساوية لرتبتك', code: 'CEILING' };
++      }
++    }
++  }
++
++  return { ok: true };
++}
++
++/* ════════════════════════════════════════════════
++   6ب) سجل التدقيق (Audit Trail — الدستور §15)
++   كل محاولة مرفوضة لحدث إداري (500+) تُوثَّق في admin_actions_log
++════════════════════════════════════════════════ */
++function auditDeny(socket, event, verdict, perm) {
++  if (!perm || (perm.min || 0) < RANKS.ADMIN) return;   /* أوثّق الأحداث الإدارية فقط */
++  try {
++    const u = socket.userData || {};
++    db.query(
++      `INSERT INTO admin_actions_log (room_id, actor_id, actor_name, actor_rank, action, target_name, detail)
++       VALUES (?,?,?,?,?,?,?)`,
++      [
++        parseInt(u.room_id) || null,
++        u.user_id || null,
++        u.username || socket.id,
++        u.rank || 0,
++        'DENY:' + event,
++        null,
++        (verdict.code || 'DENIED') + ' — ' + (verdict.message || '').slice(0, 150),
++      ]
++    ).catch(() => {});
++  } catch {}
++}
++
++/* ════════════════════════════════════════════════
++   7) التثبيت — يُستدعى مرة واحدة من index.js
++   io.use  : يفكّ توكن الـ handshake ويرفض الفاسد منها للأعضاء
++   socket.use : يفحص كل حدث وارد قبل وصوله لأي handler
++════════════════════════════════════════════════ */
++function installSocketGuard(io) {
++  io.use((socket, next) => {
++    /* فك التوكن مبكراً — يستخدمه authenticateJoin لاحقاً */
++    try {
++      const token = socket.handshake?.auth?.token;
++      if (token && !token.startsWith('guest_')) {
++        socket.authPayload = jwt.verify(token, JWT_SECRET);
++      }
++    } catch { socket.authPayload = null; }
++
++    /* حارس كل حدث وارد */
++    socket.use((packet, nextPacket) => {
++      const [event, data] = packet;
++      checkEvent(io, socket, event, data)
++        .then((verdict) => {
++          if (verdict.ok) return nextPacket();
++          const u = socket.userData?.username || socket.id;
++          console.warn(`🛡️ [rankGuard] رُفض "${event}" من ${u} (rank:${socket.userData?.rank ?? '—'}) — ${verdict.code}`);
++          auditDeny(socket, event, verdict, EVENT_PERMISSIONS[event]);
++          socket.emit('error', verdict.message || '⛔ مرفوض');
++        })
++        .catch((err) => {
++          /* فشل غير متوقع في الفحص → أغلق الطريق (fail-closed) */
++          console.error(`🛡️ [rankGuard] خطأ أثناء فحص "${event}":`, err.message);
++          socket.emit('error', '⛔ خطأ في التحقق من الصلاحية');
++        });
++    });
++
++    next();
++  });
++
++  console.log('🛡️ rankGuard مفعّل — كل أحداث Socket خاضعة لجدول الصلاحيات');
++}
++
++module.exports = {
++  RANKS,
++  EVENT_PERMISSIONS,
++  canActOn,
++  maxAssignableRank,
++  isLineageParent,
++  authenticateJoin,
++  installSocketGuard,
++};
+diff --git a/tests/integration.test.js b/tests/integration.test.js
+new file mode 100644
+index 0000000..807320c
+--- /dev/null
++++ b/tests/integration.test.js
+@@ -0,0 +1,174 @@
++'use strict';
++/* ════════════════════════════════════════════════════════════════
++   WidBid — tests/integration.test.js   [S15]
++   اختبار تكامل حقيقي: خادم فعلي + عملاء Socket.io فعليون
++   يحاكي هجمات حقيقية: انتحال هوية، تصعيد صلاحيات، أحداث مزوّرة
++   التشغيل: node tests/integration.test.js
++════════════════════════════════════════════════════════════════ */
++process.env.JWT_SECRET = 'integration-test-secret';
++process.env.PORT       = '3999';
++process.env.DB_HOST    = '127.0.0.1';
++
++/* ── حقن DB وهمية في require cache قبل تحميل الخادم ── */
++const dbPath = require.resolve('../server/db.js');
++const users = [
++  { id: 1, username: 'superowner', rank: 1200, is_banned: 0, is_active: 1, avatar: 'av1.svg' },
++  { id: 2, username: 'admin1',     rank: 500,  is_banned: 0, is_active: 1, avatar: 'av2.svg' },
++  { id: 3, username: 'member1',    rank: 200,  is_banned: 0, is_active: 1, avatar: 'av3.svg' },
++];
++const fakePool = {
++  query: async (sql, params = []) => {
++    if (/SELECT rank FROM users WHERE id/.test(sql)) {
++      const u = users.find(x => x.id === Number(params[0]));
++      return [u ? [{ rank: u.rank }] : []];
++    }
++    if (/SELECT .* FROM rooms WHERE id/.test(sql)) return [[]];
++    if (/FROM messages m/.test(sql)) return [[]];
++    if (/SELECT rank FROM users WHERE username/.test(sql)) {
++      const u = users.find(x => x.username === params[0]);
++      return [u ? [{ rank: u.rank }] : []];
++    }
++    if (/FROM users a/.test(sql)) return [[]];   /* no lineage */
++    return [{ insertId: 1, affectedRows: 1 }];
++  },
++  getConnection: async () => ({ release() {} }),
++};
++require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: fakePool };
++
++/* ── تعطيل البوتات والميدياسوب حتى لا تشوّش الاختبار ── */
++const botsPath = require.resolve('../server/bots.js');
++require.cache[botsPath] = { id: botsPath, filename: botsPath, loaded: true,
++  exports: { initBots: () => {}, getBotUsers: () => [] } };
++const msPath = require.resolve('../server/mediasoup.js');
++require.cache[msPath] = { id: msPath, filename: msPath, loaded: true,
++  exports: { initWorker: async () => {}, getOrCreateRoom: async () => { throw new Error('off'); },
++             createTransport: async () => {}, sfuRooms: new Map(), cleanupRoom: () => {} } };
++
++require('../server/index.js');
++
++const jwt  = require('jsonwebtoken');
++const { io: ioClient } = require('socket.io-client');
++
++const URL = 'http://127.0.0.1:3999';
++const tok = (payload) => jwt.sign(payload, process.env.JWT_SECRET);
++const sleep = (ms) => new Promise(r => setTimeout(r, ms));
++
++let pass = 0, fail = 0;
++const t = (name, cond) => {
++  if (cond) { pass++; console.log(`  ✅ ${name}`); }
++  else      { fail++; console.error(`  ❌ ${name}`); }
++};
++
++function connect(token) {
++  return new Promise((resolve, reject) => {
++    const s = ioClient(URL, { auth: { token }, transports: ['websocket'], reconnection: false });
++    s.on('connect', () => resolve(s));
++    s.on('connect_error', reject);
++    setTimeout(() => reject(new Error('timeout')), 4000);
++  });
++}
++const join = (s, extra = {}) =>
++  s.emit('joinRoom', { room_id: '1', username: 'x', ...extra });
++
++async function run() {
++  console.log('\n⑤ اختبار التكامل — هجمات حقيقية على خادم حي');
++  await sleep(800); /* انتظر إقلاع الخادم */
++
++  /* ── هجوم 1: انتحال هوية سوبر أونر (إرسال user_id + rank مزيفين بلا توكن) ── */
++  {
++    const s = await connect(null);
++    const errs = [];
++    s.on('error', (m) => errs.push(m));
++    let myRank = null;
++    s.on('userJoined', (d) => { if (d.username === 'المخترق') myRank = d.rank; });
++    join(s, { username: 'المخترق', user_id: 1, rank: 1200 });   /* محاولة انتحال */
++    await sleep(400);
++    t('انتحال user_id بلا توكن → rank=100 وليس 1200', myRank === 100);
++
++    /* محاولة استخدام صلاحيات 1200 بعد "الانتحال" */
++    s.emit('platformBroadcast', { text: 'pwned', by: 'المخترق' });
++    s.emit('emergencyFreeze', { target: 'member1', by: 'المخترق' });
++    await sleep(300);
++    t('platformBroadcast بعد الانتحال → مرفوض', errs.length >= 1);
++    s.close();
++  }
++
++  /* ── هجوم 2: عضو حقيقي يحاول التصعيد لـ 1200 عبر assignRole ── */
++  {
++    const s = await connect(tok({ id: 3, username: 'member1' }));
++    const errs = [];
++    s.on('error', (m) => errs.push(m));
++    join(s, { username: 'member1', rank: 1200 });   /* rank في الباكيت — يجب تجاهله */
++    await sleep(400);
++    s.emit('assignRole', { room_id: '1', target: 'member1', new_rank: 1200, by: 'member1' });
++    s.emit('permanentBan', { target: 'superowner', by: 'member1' });
++    await sleep(300);
++    t('عضو يعيّن نفسه سوبر أونر → مرفوض', errs.length >= 1);
++    t('عضو يحظر سوبر أونر → مرفوض', errs.length >= 2);
++    s.close();
++  }
++
++  /* ── هجوم 3: زائر بتوكن زائر رسمي يحاول كتم الآخرين ── */
++  {
++    const s = await connect(tok({ id: 0, username: 'زائر_شرير', rank: 100, isGuest: true }));
++    const errs = [];
++    s.on('error', (m) => errs.push(m));
++    join(s, { username: 'زائر_شرير', rank: 1200, user_id: 2 });
++    await sleep(400);
++    s.emit('muteUser', { room_id: '1', target: 'member1', by: 'زائر_شرير' });
++    s.emit('clearRoomChat', { room_id: '1' });
++    await sleep(300);
++    t('زائر يكتم عضواً → مرفوض', errs.length >= 1);
++    t('زائر يمسح شات الغرفة → مرفوض', errs.length >= 2);
++    s.close();
++  }
++
++  /* ── المسار السليم: سوبر أونر حقيقي (توكن صحيح) يعمل بحرية ── */
++  {
++    const s = await connect(tok({ id: 1, username: 'superowner' }));
++    const errs = [];
++    s.on('error', (m) => errs.push(m));
++    let gotStats = false;
++    s.on('platformStats', () => { gotStats = true; });
++    join(s, { username: 'superowner' });
++    await sleep(400);
++    s.emit('platformBroadcast', { text: 'إعلان رسمي', by: 'superowner' });
++    s.emit('getPlatformStats', {});
++    await sleep(300);
++    t('سوبر أونر حقيقي: platformBroadcast ✓', errs.length === 0);
++    t('سوبر أونر حقيقي: platformStats ✓', gotStats === true);
++    s.close();
++  }
++
++  /* ── هجوم 4: توكن مزوّر بتوقيع خاطئ ── */
++  {
++    const fakeTok = jwt.sign({ id: 1, username: 'superowner' }, 'wrong-secret');
++    const s = await connect(fakeTok);
++    let myRank = null;
++    s.on('userJoined', (d) => { if (d.username === 'دخيل') myRank = d.rank; });
++    join(s, { username: 'دخيل' });
++    await sleep(400);
++    t('توكن بتوقيع خاطئ → زائر rank=100', myRank === 100);
++    s.close();
++  }
++
++  /* ── هجوم 5: رسالة باسم مستخدم آخر (انتحال اسم في sendMessage) ── */
++  {
++    const s = await connect(tok({ id: 3, username: 'member1' }));
++    join(s, { username: 'member1' });
++    await sleep(400);
++    const seen = [];
++    s.on('newMessage', (m) => seen.push(m));
++    s.emit('sendMessage', { room_id: '1', message: 'أنا سوبر أونر!', username: 'superowner', rank: 1200, user_id: 1 });
++    await sleep(300);
++    const mine = seen.find(m => m.message === 'أنا سوبر أونر!');
++    t('انتحال اسم في الرسائل → الاسم الحقيقي من الجلسة', mine && mine.username === 'member1' && mine.rank === 200);
++    s.close();
++  }
++
++  console.log(`\n═══════════════════════════════`);
++  console.log(`التكامل: ${pass} ناجح / ${fail} فاشل`);
++  process.exit(fail ? 1 : 0);
++}
++
++run().catch(e => { console.error('💥', e.message); process.exit(1); });
+diff --git a/tests/rankGuard.test.js b/tests/rankGuard.test.js
+new file mode 100644
+index 0000000..67c85c3
+--- /dev/null
++++ b/tests/rankGuard.test.js
+@@ -0,0 +1,236 @@
++'use strict';
++/* ════════════════════════════════════════════════════════════════
++   WidBid — tests/rankGuard.test.js   [S15]
++   اختبارات وحدة لحارس الصلاحيات — بدون قاعدة بيانات (mock)
++   التشغيل: node tests/rankGuard.test.js
++════════════════════════════════════════════════════════════════ */
++process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-s15';
++
++/* ── Mock قاعدة البيانات قبل تحميل rankGuard ── */
++const dbPath = require.resolve('../server/db');
++require(dbPath);
++const realQuery = require(dbPath).query;
++let mockUsers = [];   /* [{id, username, rank, owner_id, super_root_id}] */
++require(dbPath).query = async (sql, params) => {
++  if (/SELECT rank FROM users WHERE username/.test(sql)) {
++    const u = mockUsers.find(x => x.username === params[0]);
++    return [u ? [{ rank: u.rank }] : []];
++  }
++  if (/FROM users a/.test(sql)) {   /* lineage */
++    const [targetName, actorId] = params;
++    const t = mockUsers.find(x => x.username === targetName);
++    const a = mockUsers.find(x => x.id === actorId);
++    const isParent = a && t && (a.owner_id === t.id || a.super_root_id === t.id);
++    return [isParent ? [{ 1: 1 }] : []];
++  }
++  if (/INSERT INTO admin_actions_log/.test(sql)) return [{ insertId: 1 }];
++  return [[]];
++};
++
++const jwt = require('jsonwebtoken');
++const G   = require('../server/rankGuard');
++const { RANKS, canActOn, maxAssignableRank, authenticateJoin } = G;
++
++let pass = 0, fail = 0;
++function t(name, cond) {
++  if (cond) { pass++; console.log(`  ✅ ${name}`); }
++  else      { fail++; console.error(`  ❌ ${name}`); }
++}
++const mkSocket = (userData, token) => ({
++  userData,
++  handshake: { auth: { token } },
++  emitted: [],
++  emit(ev, msg) { this.emitted.push([ev, msg]); },
++});
++const memberToken = (id, username) => jwt.sign({ id, username }, process.env.JWT_SECRET);
++const guestToken  = (username) => jwt.sign({ id: 0, username, rank: 100, isGuest: true }, process.env.JWT_SECRET);
++
++/* ════════════ 1) canActOn — مصفوفة الدستور 19.3 ════════════ */
++console.log('\n① canActOn — مصفوفة الطرد والحظر');
++t('مشرف(500) يطرد زائر(100)',            canActOn(500, 100, 'kick') === true);
++t('مشرف(500) يطرد عضو(200)',             canActOn(500, 200, 'kick') === true);
++t('مشرف(500) ✗ محمي(300) محصّن',         canActOn(500, 300, 'kick') === false);
++t('مشرف(500) ✗ ملكي(400)',               canActOn(500, 400, 'kick') === false);
++t('سوبر أدمن(600) يطرد ملكي(400)',        canActOn(600, 400, 'kick') === true);
++t('سوبر أدمن(600) ✗ حظر ملكي(400)',      canActOn(600, 400, 'ban')  === false);
++t('ماستر(700) يحظر ملكي(400)',            canActOn(700, 400, 'ban')  === true);
++t('ماستر(700) يطرد مشرف(500)',            canActOn(700, 500, 'kick') === true);
++t('ماستر(700) ✗ محمي(300) محصّن',         canActOn(700, 300, 'kick') === false);
++t('سوبر ماستر(800) يطرد محمي(300)',       canActOn(800, 300, 'kick') === true);
++t('سوبر ماستر(800) يطرد سوبر أدمن(600)',  canActOn(800, 600, 'kick') === true);
++t('سوبر ماستر(800) ✗ ماستر=مساوٍ… لا',    canActOn(800, 800, 'kick') === false);
++t('لا أحد يطرد نفس رتبته (700↔700)',      canActOn(700, 700, 'kick') === false);
++t('الأدنى ✗ الأعلى (500↔1200)',           canActOn(500, 1200, 'kick') === false);
++t('زائر(100) لا إجراءات إدارية',          canActOn(100, 100, 'kick') === false);
++t('عضو(200) لا يطرد زائراً حتى',          canActOn(200, 100, 'kick') === false);
++t('سوبر أونر يطرد أونر(1100)',            canActOn(1200, 1100, 'kick') === true);
++t('أونر(1100) ✗ سوبر أونر',              canActOn(1100, 1200, 'kick') === false);
++
++/* ════════════ 2) maxAssignableRank — سقوف S14 ════════════ */
++console.log('\n② maxAssignableRank — سقوف الترقية');
++t('ماستر(700) → حتى 500',        maxAssignableRank(700)  === 500);
++t('سوبر ماستر(800) → حتى 600',   maxAssignableRank(800)  === 600);
++t('روت(900) → لا ترقية (0)',     maxAssignableRank(900)  === 0);
++t('سوبر روت(1000) → حتى 800',    maxAssignableRank(1000) === 800);
++t('أونر(1100) → حتى 1000',       maxAssignableRank(1100) === 1000);
++t('سوبر أونر(1200) → حتى 1100',  maxAssignableRank(1200) === 1100);
++t('مشرف(500) → لا شيء (0)',      maxAssignableRank(500)  === 0);
++
++/* ════════════ 3) authenticateJoin — JWT هو الهوية ════════════ */
++console.log('\n③ authenticateJoin — المصادقة');
++{
++  const tok = memberToken(42, 'Tamer');
++  const id1 = authenticateJoin(mkSocket(null, tok), { username: 'مزيف', user_id: 999, rank: 1200 });
++  t('عضو: user_id من التوكن لا من العميل',   id1.user_id === 42);
++  t('عضو: username من التوكن لا من العميل',  id1.username === 'Tamer');
++  t('عضو: rank=null (تُجلب من DB)',          id1.rank === null && id1.authed === true);
++
++  const id2 = authenticateJoin(mkSocket(null, guestToken('ضيف_1')), { rank: 1200 });
++  t('زائر بتوكن رسمي: rank=100 حتماً',  id2.rank === 100 && id2.isGuest === true);
++  t('زائر بتوكن رسمي: user_id=null',    id2.user_id === null);
++
++  const id3 = authenticateJoin(mkSocket(null, 'توكن_فاسد'), { username: 'محتال', user_id: 1, rank: 1200 });
++  t('توكن فاسد → زائر صرف',             id3.rank === 100 && id3.user_id === null);
++  t('توكن فاسد → لا ثقة بـ user_id',    id3.authed === false);
++
++  const id4 = authenticateJoin(mkSocket(null, null), { username: 'مجهول' });
++  t('بدون توكن → زائر باسم معقّم',      id4.rank === 100 && id4.username === 'مجهول');
++
++  const id5 = authenticateJoin(mkSocket(null, null), { username: '  '.repeat(10) });
++  t('اسم فارغ → "زائر"',                id5.username === 'زائر');
++}
++
++/* ════════════ 4) checkEvent — عبر installSocketGuard ════════════ */
++console.log('\n④ checkEvent — فحص الأحداث الكامل (mock io)');
++const { EventEmitter } = require('events');
++function mkIo() {
++  const io = new EventEmitter();
++  io.use = (fn) => { io._mw = fn; };
++  io.in  = () => ({ fetchSockets: async () => io._roomSockets || [] });
++  io._roomSockets = [];
++  G.installSocketGuard(io);
++  return io;
++}
++function connectSocket(io, userData, token) {
++  const handlers = [];
++  const sock = {
++    userData, handshake: { auth: { token } }, id: 'sock-' + Math.random().toString(36).slice(2),
++    emitted: [], emit(ev, m) { this.emitted.push([ev, m]); },
++    use(fn) { handlers.push(fn); },
++  };
++  io._mw(sock, () => {});
++  sock._fire = async (event, data) => {
++    let allowed = false;
++    for (const h of handlers) {
++      /* الرفض في socket.io = عدم استدعاء next إطلاقاً (الحزمة تُسقَط).
++         ننتظر next أو مهلة قصيرة — أيهما أولاً */
++      await new Promise((res) => {
++        const timer = setTimeout(res, 25);
++        h([event, data], () => { allowed = true; clearTimeout(timer); res(); });
++      });
++      if (!allowed) break;
++    }
++    return allowed;
++  };
++  return sock;
++}
++const run = async () => {
++  const io = mkIo();
++
++  /* زائر */
++  const guest = connectSocket(io, { username: 'زائر', user_id: null, rank: 100, room_id: '1' });
++  t('زائر يرسل رسالة',                await guest._fire('sendMessage', { room_id: 1, message: 'hi' }) === true);
++  t('زائر ✗ يرسل صورة (200+)',        await guest._fire('sendImage',   { room_id: 1, image: 'x' }) === false);
++  t('زائر ✗ يرفع يد (200+)',          await guest._fire('raiseHand',   { room_id: 1 }) === false);
++  t('زائر ✗ يطرد (500+)',             await guest._fire('kickUser',    { room_id: 1, target: 'x' }) === false);
++  t('زائر ✗ systemMessage (600+)',    await guest._fire('systemMessage', { room_id: 1, text: 'x' }) === false);
++  t('زائر ✗ platformBroadcast',       await guest._fire('platformBroadcast', { text: 'x' }) === false);
++  t('زائر joinRoom مفتوح',            await guest._fire('joinRoom',    { room_id: 1 }) === true);
++
++  /* عضو (200) */
++  const member = connectSocket(io, { username: 'عضو', user_id: 5, rank: 200, room_id: '1' });
++  t('عضو يرفع يد',                    await member._fire('raiseHand',  { room_id: 1 }) === true);
++  t('عضو يرسل صورة',                  await member._fire('sendImage',  { room_id: 1, image: 'x' }) === true);
++  t('عضو ✗ يعيّن رتبة (700+)',        await member._fire('assignRole', { room_id: 1, target: 'a', new_rank: 200 }) === false);
++
++  /* مشرف (500) */
++  const admin = connectSocket(io, { username: 'مشرف', user_id: 10, rank: 500, room_id: '1' });
++  io._roomSockets = [
++    { userData: { username: 'هدف_زائر', rank: 100 } },
++    { userData: { username: 'هدف_محمي', rank: 300 } },
++    { userData: { username: 'هدف_سوبر', rank: 600 } },
++  ];
++  t('مشرف يكتم زائراً',               await admin._fire('muteUser', { room_id: 1, target: 'هدف_زائر' }) === true);
++  t('مشرف ✗ يطرد محمياً (حصانة)',     await admin._fire('kickUser', { room_id: 1, target: 'هدف_محمي' }) === false);
++  t('مشرف ✗ يكتم سوبر أدمن (أعلى)',    await admin._fire('muteUser', { room_id: 1, target: 'هدف_سوبر' }) === false);
++  t('مشرف ✗ يكتم نفسه',               await admin._fire('muteUser', { room_id: 1, target: 'مشرف' }) === false);
++  t('مشرف ✗ systemMessage (600+)',    await admin._fire('systemMessage', { room_id: 1, text: 'x' }) === false);
++  t('مشرف يدير السبيكر',              await admin._fire('speakerExtend', { room_id: 1, seconds: 60 }) === true);
++
++  /* سوبر ماستر (800) — سقف الترقية 600 */
++  const sm = connectSocket(io, { username: 'SM', user_id: 20, rank: 800, room_id: '1' });
++  mockUsers = [{ id: 50, username: 'عضو_بعيد', rank: 200 }];
++  t('SM يرقّي عضواً لـ500 ✓',          await sm._fire('assignRole', { room_id: 1, target: 'عضو_بعيد', new_rank: 500 }) === true);
++  t('SM يرقّي لـ600 ✓ (السقف)',        await sm._fire('assignRole', { room_id: 1, target: 'عضو_بعيد', new_rank: 600 }) === true);
++  t('SM ✗ يرقّي لـ700 (فوق السقف)',    await sm._fire('assignRole', { room_id: 1, target: 'عضو_بعيد', new_rank: 700 }) === false);
++  t('SM ✗ يرقّي لـ800 (= رتبته)',      await sm._fire('assignRole', { room_id: 1, target: 'عضو_بعيد', new_rank: 800 }) === false);
++
++  /* روت (900) — لا ترقية إطلاقاً */
++  const root = connectSocket(io, { username: 'Root', user_id: 30, rank: 900, room_id: '1' });
++  t('روت ✗ يرقّي (سقفه 0)',           await root._fire('assignRole', { room_id: 1, target: 'عضو_بعيد', new_rank: 200 }) === false);
++  t('روت يغيّر الثيم (900+)',          await root._fire('setTheme', { room_id: 1, theme: 'night' }) === true);
++
++  /* حصانة النسب: سوبر روت أنشأ حساب ماستر — الماستر لا يعاقبه
++     (الأب هنا أعلى رتبة — يُرفض بالرتبة أولاً) */
++  mockUsers = [
++    { id: 30, username: 'Root',  rank: 900,  super_root_id: 40 },
++    { id: 40, username: 'أبي_الSR', rank: 1000 },
++  ];
++  const rootChild = connectSocket(io, { username: 'Root', user_id: 30, rank: 900, room_id: '1' });
++  t('حصانة النسب: ✗ معاقبة الأب الأعلى', await rootChild._fire('banIP', { room_id: 1, target: 'أبي_الSR' }) === false);
++
++  /* المسار الحقيقي لحصانة النسب: الأب أدنى رتبة حالياً (خُفّض بعد الإنشاء)
++     — فحص الرتبة يسمح، لكن حصانة النسب تمنع */
++  mockUsers = [
++    { id: 30, username: 'Root',   rank: 900, super_root_id: 40 },
++    { id: 40, username: 'أبي_المنخفض', rank: 500 },
++  ];
++  io._roomSockets = [{ userData: { username: 'أبي_المنخفض', rank: 500 } }];
++  t('حصانة النسب: ✗ ولو كان الأب أدنى رتبة', await rootChild._fire('banIP', { room_id: 1, target: 'أبي_المنخفض' }) === false);
++  /* والعكس: مستخدم عادي بنفس الرتبة → يسمح (ليس أباً) */
++  mockUsers = [{ id: 41, username: 'مشرف_عادي', rank: 500 }];
++  io._roomSockets = [{ userData: { username: 'مشرف_عادي', rank: 500 } }];
++  t('بدون نسب: ✓ يسمح بالإجراء',          await rootChild._fire('banIP', { room_id: 1, target: 'مشرف_عادي' }) === true);
++
++  /* سوبر أونر (1200) — كل شيء مفتوح */
++  mockUsers = [{ id: 60, username: 'أونر_هدف', rank: 1100 }];
++  const so = connectSocket(io, { username: 'SO', user_id: 1, rank: 1200, room_id: '1' });
++  t('سوبر أونر يجمّد أونر',            await so._fire('emergencyFreeze', { target: 'أونر_هدف' }) === true);
++  t('سوبر أونر platformBroadcast',     await so._fire('platformBroadcast', { text: 'x' }) === true);
++  t('سوبر أونر ✗ يستهدف نفسه',         await so._fire('permanentBan', { target: 'SO' }) === false);
++
++  /* نطاق البيانات الشخصية */
++  const m2 = connectSocket(io, { username: 'عضو2', user_id: 77, rank: 200, room_id: '1' });
++  t('عضو يقرأ أجهزته هو',              await m2._fire('getMyDevices', { user_id: 77 }) === true);
++  t('عضو ✗ يقرأ أجهزة غيره',           await m2._fire('getMyDevices', { user_id: 78 }) === false);
++  t('سوبر أونر ✓ يقرأ أجهزة أي أحد',   await so._fire('getMyDevices', { user_id: 78 }) === true);
++
++  /* قبل الدخول (بدون userData) */
++  const preJoin = connectSocket(io, null, null);
++  t('قبل الدخول: ✗ sendMessage',       await preJoin._fire('sendMessage', { room_id: 1, message: 'x' }) === false);
++  t('قبل الدخول: ✓ joinRoom',          await preJoin._fire('joinRoom', { room_id: 1 }) === true);
++
++  /* حدث غير مسجّل → يسمح مع تحذير */
++  t('حدث غير معروف يمرّ (مع تحذير)',   await guest._fire('futureEvent', {}) === true);
++
++  /* رُفض → وصلت رسالة error للمخالف */
++  const denied = guest.emitted.filter(([ev]) => ev === 'error').length;
++  t('رسائل error وصلت للمخالف',        denied >= 5);
++};
++
++run().then(() => {
++  console.log(`\n═══════════════════════════════`);
++  console.log(`النتيجة: ${pass} ناجح / ${fail} فاشل`);
++  require(require.resolve('../server/db')).query = realQuery;
++  process.exit(fail ? 1 : 0);
++}).catch((e) => { console.error('💥', e); process.exit(1); });
+diff --git "a/\330\247\331\201\331\203\330\247\330\261 \331\210\331\205\330\261\330\247\330\255\331\204 \330\247\331\204\330\252\331\202\330\257\331\205/WidBid_S15.md" "b/\330\247\331\201\331\203\330\247\330\261 \331\210\331\205\330\261\330\247\330\255\331\204 \330\247\331\204\330\252\331\202\330\257\331\205/WidBid_S15.md"
+new file mode 100644
+index 0000000..e4ddf95
+--- /dev/null
++++ "b/\330\247\331\201\331\203\330\247\330\261 \331\210\331\205\330\261\330\247\330\255\331\204 \330\247\331\204\330\252\331\202\330\257\331\205/WidBid_S15.md"	
+@@ -0,0 +1,148 @@
++# WidBid — Session 15 (S15) — نظام الصلاحيات
++**التاريخ:** 2026-07-17
++**الحالة:** مكتملة ✅
++**المستودع:** github.com/Tamer2beed/widbid2
++**بُنيت على:** S14 — حسب خارطة الطريق الموثقة في WidBid_S14.md (🔴 أولوية عالية)
++
++---
++
++## الهدف (من وثيقة S14)
++
++> **المشكلة:** لا يوجد فصل حقيقي بين الصلاحيات — أي مستخدم يعرف البنية قد يصل لميزات أعلى من رتبته.
++
++---
++
++## الملفات الجديدة
++
++### 1. `server/rankGuard.js` — حارس الصلاحيات المركزي (الخادم)
++- **جدول EVENT_PERMISSIONS**: كل حدث Socket (70+ حدثاً) له سياسة معلنة:
++  `min` (أدنى رتبة) / `joined` (يشترط دخول غرفة) / `target` (فحص الهدف) / `action` / `self` (بيانات شخصية)
++- **مصفوفة الدستور §19.3 حرفياً** (`ACTION_CEILING`):
++  المشرف 500 يستهدف حتى 200، سوبر أدمن 600 حتى 400، ماستر 700 حتى 500،
++  سوبر ماستر/روت حتى 700، سوبر روت حتى 900، أونر حتى 1000، سوبر أونر حتى 1100
++- **حصانة المحمي (300)**: لا يُطرد/يُكتم/يُحظر إلا من سوبر ماستر (800+)
++- **الحصانة الملكية**: سوبر أدمن يطرد الملكي لكن **لا يحظره** (حاشية 19.3)
++- **حصانة النسب §19.4.2** (`isLineageParent`): لا يمكن معاقبة من أنشأ حسابك —
++  وتعمل حتى لو خُفّضت رتبة الأب لاحقاً
++- **سقوف الترقية** (`maxAssignableRank`):
++  700→500، 800→600، 900→ممنوع، 1000→800، 1100→1000، 1200→1100
++- **`authenticateJoin`**: الهوية من JWT فقط — يتجاهل `user_id`/`rank`/`username` القادمة من العميل
++- **Audit Trail §15**: كل محاولة مرفوضة لحدث إداري تُسجَّل في `admin_actions_log`
++- **التثبيت**: `socket.use` يفحص كل حزمة قبل وصولها لأي handler — fail-closed عند أي خطأ
++
++### 2. `public/js/guard.js` — التحقق المزدوج (الواجهة)
++- إخفاء تلقائي لكل عنصر موسوم بـ `data-min-rank="500"` إذا رتبة المستخدم أدنى
++- MutationObserver يطبّق الإخفاء على العناصر المبنية ديناميكياً
++- `Guard.wrapSocket(socket)` يعترض `socket.emit` ويمنع إرسال الأحداث فوق الرتبة من الكونسول
++- `Guard.watch()` يعيد التطبيق عند تغيّر الرتبة (ترقية أثناء الجلسة)
++- API عام: `Guard.rank` / `Guard.can(min)` / `Guard.RANKS`
++
++### 3. `tests/rankGuard.test.js` — 69 اختبار وحدة
++مصفوفة 19.3 كاملة + سقوف الترقية + authenticateJoin + checkEvent بـ mock io
++
++### 4. `tests/integration.test.js` — 10 اختبارات تكامل بخادم حي
++هجمات حقيقية عبر socket.io-client: انتحال هوية، تصعيد صلاحيات، توكن مزوّر، انتحال اسم
++
++---
++
++## الملفات المعدَّلة
++
++### `server/index.js`
++| الموضع | الإصلاح |
++|---|---|
++| `installSocketGuard(io)` | تفعيل الحارس على كل الأحداث |
++| `joinRoom` | الهوية من JWT عبر `authenticateJoin` — **إغلاق ثغرة انتحال user_id** |
++| `sendMessage` | username/rank/user_id من `socket.userData` فقط — **إغلاق انتحال الاسم في الرسائل** |
++| `deleteMessage` | إثبات الملكية من DB بدل حقل `by` القابل للتزوير |
++| `sendImage` | الهوية من الجلسة فقط |
++| `speakerRequest` | الرتبة من الجلسة — **إغلاق التقدّم المزيّف في الطابور** |
++| `getMyDevices` / `removeDevice` | `user_id` من الجلسة الموثقة — **إغلاق قراءة بيانات الغير** |
++
++### `public/chat.html` + `public/js/core.js`
++- تحميل `guard.js` قبل `core.js`
++- `adminMenuSection` موسوم بـ `data-min-rank="500"` ويُدار عبر `Guard.apply()`
++- اعتراض `socket.emit` عبر `Guard.wrapSocket`
++
++### `public/rooms.html`
++- تحميل `guard.js` + زر ＋ (إنشاء غرفة) موسوم بـ `data-min-rank="1100"`
++
++### `package.json`
++- سكربت `npm test` يشغّل اختباري الوحدة والتكامل
++
++---
++
++## الثغرات المُغلقة (كانت مفتوحة قبل S15)
++
++1. 🔴 **انتحال أي حساب**: `joinRoom` كان يقبل `user_id` من العميل → أرسل `user_id` الخاص بسوبر أونر فتصبح هو برتبته
++2. 🔴 **انتحال الاسم في الرسائل**: `sendMessage` كان يثق بـ `username`/`rank` من العميل
++3. 🔴 **أحداث إدارية بلا فحص هدف**: `warnUser`/`banIP`/`banDevice` لم تكن تتحقق أن الهدف أدنى رتبة
++4. 🔴 **ترقية بلا سقف**: `assignRole` كان يسمح نظرياً بتعيين أي رتبة حتى 1200
++5. 🟠 **`systemMessage` مفتوح للجميع**: أي زائر يبث رسائل نظام مزيفة
++6. 🟠 **`unfreezeUser` بلا فحص رتبة إطلاقاً**
++7. 🟠 **قراءة أجهزة أي مستخدم** عبر تمرير `user_id` يدوياً
++8. 🟡 **تزوير ملكية الرسالة** في `deleteMessage` عبر حقل `by`
++9. 🟡 **تزوير الرتبة في طابور السبيكر** للتقدم على الآخرين
++
++---
++
++## نتائج الاختبار
++
++```
++الوحدة:   69 ناجح / 0 فاشل   (node tests/rankGuard.test.js)
++التكامل:  10 ناجح / 0 فاشل   (node tests/integration.test.js)
++```
++
++سيناريوهات التكامل المُحبطة فعلياً على خادم حي:
++- انتحال سوبر أونر بإرسال `user_id: 1, rank: 1200` بلا توكن → rank=100
++- عضو يعيّن نفسه سوبر أونر → مرفوض + مُسجَّل في audit log
++- زائر يكتم/يمسح → مرفوض
++- توكن JWT بتوقيع خاطئ → يُعامل كزائر
++- رسالة باسم مستخدم آخر → تُبث بالاسم الحقيقي من الجلسة
++- سوبر أونر حقيقي بتوكن صحيح → يعمل بحرية كاملة
++
++---
++
++## التحقق المزدوج (Double Verification) — كما طلبت S14
++
++```
++الواجهة (guard.js)  → يخفي الزر + يمنع emit من الكونسول
++الخادم (rankGuard)  → يرفض الحدث + يسجله في admin_actions_log
++الاثنان يجب أن يتطابقا — والخادم هو الحَكم النهائي
++```
++
++---
++
++## خارطة الطريق — المرحلة التالية (S16)
++
++### 🔴 أولوية عالية
++1. **توسيع `data-min-rank`** على بقية عناصر adminModal السبع (كل صفحة فرعية برتبتها)
++2. **اختبار شامل بجهازين** (Windows server + هاتف) مع حسابات seed التجريبية
++3. **Mediasoup SFU audio** — `npm install mediasoup` على Windows واختبار الصوت
++
++### 🟡 أولوية متوسطة (من المعلّق)
++4. `market.html` + AI bank verification (المراحل 21–24 في Roadmap v6)
++5. WebAuthn FIDO2 للأدمن 500+ (المرحلة 36)
++6. نظام النقاط والمتجر — عرض النقاط في الملف الشخصي
++7. Rate Limiting للـ socket (Token Bucket — الدستور §4)
++
++---
++
++## بروتوكول S16
++
++```bash
++# في بداية S16:
++# 1. Claude يقرأ:
++#    - افكار ومراحل التقدم/Qwen_markdown.md
++#    - افكار ومراحل التقدم/WidBid_S15.md (هذا الملف)
++# 2. ابدأ بـ: git pull origin master && npm test && node server/index.js
++```
++
++---
++
++## ملاحظات تقنية
++
++- **الحارس fail-closed**: أي خطأ غير متوقع أثناء الفحص = رفض الحدث (لا يمرر أبداً)
++- **الأحداث غير المسجّلة**: تمرّ لكن مع تحذير في الكونسول — أضفها لـ `EVENT_PERMISSIONS` فوراً
++- **البوتات غير متأثرة**: تعمل عبر `io.emit` الخادمي المباشر ولا تمر بـ `socket.use`
++- **`disconnect` لا يمر بالحارس**: أحداث النظام في socket.io معفاة من `socket.use`
++- **كلمة مرور حسابات seed**: `123456`

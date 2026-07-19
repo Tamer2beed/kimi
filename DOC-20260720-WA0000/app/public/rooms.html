@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WidBid — الغرف</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:   #0099CC;
+  --primary-d: #007AA3;
+  --accent:    #F0A500;
+  --success:   #27AE60;
+  --danger:    #E74C3C;
+  --bg:        #F0F4F8;
+  --card:      #FFFFFF;
+  --text:      #1A1A2E;
+  --muted:     #7F8C8D;
+  --border:    #E0E6ED;
+  --header-h:  54px;
+  --bottom-h:  60px;
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body { height:100%; font-family:'Tajawal',sans-serif; background:var(--bg); overflow:hidden; }
+
+/* ══ HEADER ══ */
+.header {
+  position:fixed; top:0; right:0; left:0; z-index:100;
+  height:var(--header-h);
+  background:var(--primary);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 6px rgba(0,0,0,0.18);
+}
+.logo { color:#fff; font-size:22px; font-weight:900; letter-spacing:2px; }
+.logo span { color:var(--accent); }
+.header-icons { position:absolute; left:12px; display:flex; gap:14px; align-items:center; }
+.header-right { position:absolute; right:12px; }
+.h-icon { color:#fff; font-size:22px; cursor:pointer; opacity:.9; }
+.h-icon:active { opacity:.5; }
+.notif-wrap { position:relative; }
+.notif-dot {
+  position:absolute; top:-2px; left:-2px;
+  width:8px; height:8px; border-radius:50%;
+  background:var(--danger); border:1.5px solid var(--primary);
+  display:none;
+}
+.notif-dot.show { display:block; }
+
+/* ══ CONTENT SCROLL AREA ══ */
+.content {
+  position:fixed;
+  top:var(--header-h);
+  bottom:var(--bottom-h);
+  right:0; left:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.pane { display:none; }
+.pane.active { display:block; }
+
+/* ══ STATS TOTAL BAR ══ */
+.total-bar {
+  background:var(--primary);
+  color:#fff;
+  display:flex; justify-content:center; gap:32px;
+  padding:7px 0 9px;
+}
+.total-stat { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; }
+.total-stat .val { font-size:15px; font-weight:900; }
+
+/* ══ CATEGORY ROW (مثل WEVO) ══ */
+.cat-row {
+  display:flex; align-items:center;
+  padding:14px 16px;
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  cursor:pointer;
+  transition:background .12s;
+  gap:14px;
+}
+.cat-row:active { background:#EBF7FF; }
+.cat-icon-wrap {
+  width:46px; height:46px; border-radius:50%;
+  background:var(--primary);
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px; flex-shrink:0;
+  box-shadow:0 2px 6px rgba(0,153,204,.3);
+}
+.cat-info { flex:1; min-width:0; }
+.cat-name { font-size:16px; font-weight:700; color:var(--text); }
+.cat-stats {
+  display:flex; gap:16px; margin-top:3px;
+}
+.cat-stat { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:4px; }
+.cat-arrow { font-size:18px; color:var(--muted); }
+
+/* ══ ROOMS LIST (داخل تصنيف) ══ */
+.back-bar {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px;
+  background:var(--primary);
+  color:#fff;
+  cursor:pointer;
+  font-size:15px; font-weight:700;
+}
+.back-bar:active { opacity:.8; }
+.back-icon { font-size:20px; }
+.cat-label { font-size:13px; opacity:.85; margin-right:4px; }
+
+.room-row {
+  display:flex; align-items:center; gap:12px;
+  padding:12px 16px;
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  cursor:pointer; transition:background .12s;
+}
+.room-row:active { background:#EBF7FF; }
+.room-icon {
+  width:46px; height:46px; border-radius:12px;
+  background:linear-gradient(135deg, var(--primary), #00C6FF);
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px; flex-shrink:0; position:relative;
+}
+.live-dot {
+  position:absolute; bottom:-2px; right:-2px;
+  width:11px; height:11px; border-radius:50%;
+  background:var(--success); border:2px solid #fff;
+}
+.room-info { flex:1; min-width:0; }
+.room-name {
+  font-size:15px; font-weight:700; color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.room-meta { display:flex; align-items:center; gap:8px; margin-top:3px; }
+.room-meta span { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:3px; }
+.badge {
+  font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700;
+}
+.badge-pub  { background:#E3F4FB; color:#007AA3; }
+.badge-priv { background:#FCE4EC; color:#C62828; }
+.fav-btn {
+  font-size:22px; cursor:pointer; flex-shrink:0;
+  transition:transform .15s;
+}
+.fav-btn:active { transform:scale(1.35); }
+
+/* ══ SEARCH ══ */
+.search-wrap {
+  padding:10px 12px;
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  position:sticky; top:0; z-index:10;
+}
+.search-box {
+  display:flex; align-items:center; gap:8px;
+  background:var(--bg); border-radius:24px;
+  padding:8px 14px; border:1px solid var(--border);
+}
+.search-box input {
+  flex:1; border:none; background:transparent; outline:none;
+  font-family:'Tajawal',sans-serif; font-size:14px;
+  color:var(--text); direction:rtl;
+}
+.search-box input::placeholder { color:var(--muted); }
+.search-box .s-icon { font-size:18px; color:var(--muted); }
+.clear-x { cursor:pointer; font-size:16px; color:var(--muted); display:none; }
+
+/* ══ EMPTY / SKELETON ══ */
+.empty-state {
+  display:flex; flex-direction:column; align-items:center;
+  padding:60px 24px; gap:12px; color:var(--muted); text-align:center;
+}
+.empty-state .e-icon { font-size:52px; opacity:.45; }
+.empty-state p { font-size:14px; }
+
+.skel-row {
+  display:flex; gap:12px; padding:13px 16px;
+  background:var(--card); border-bottom:1px solid var(--border);
+}
+@keyframes shimmer {
+  0%{background-position:200% 0} 100%{background-position:-200% 0}
+}
+.skeleton {
+  background: linear-gradient(90deg,#e8e8e8 25%,#f5f5f5 50%,#e8e8e8 75%);
+  background-size:200% 100%;
+  animation:shimmer 1.4s infinite;
+  border-radius:6px;
+}
+
+/* ══ FAB — Owner فقط ══ */
+.fab {
+  position:fixed; bottom:calc(var(--bottom-h) + 14px); left:16px;
+  width:52px; height:52px; border-radius:50%;
+  background:var(--primary); color:#fff;
+  font-size:28px; display:none; align-items:center; justify-content:center;
+  box-shadow:0 4px 16px rgba(0,153,204,.45);
+  cursor:pointer; z-index:99; transition:transform .15s;
+}
+.fab.visible { display:flex; }
+.fab:active { transform:scale(.92); }
+
+/* ══ MODAL إنشاء غرفة ══ */
+.overlay {
+  position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,.5); display:none; align-items:flex-end;
+}
+.overlay.show { display:flex; }
+.sheet {
+  width:100%; background:var(--card);
+  border-radius:20px 20px 0 0;
+  padding:20px 16px 36px;
+  animation:up .25s ease;
+}
+@keyframes up { from{transform:translateY(100%)} to{transform:translateY(0)} }
+.sheet-title { font-size:17px; font-weight:700; text-align:center; margin-bottom:18px; color:var(--text); }
+.f-label { font-size:13px; font-weight:600; color:var(--muted); display:block; margin-bottom:6px; }
+.f-input, .f-select {
+  width:100%; height:48px; border:1.5px solid var(--border);
+  border-radius:10px; padding:0 14px; margin-bottom:14px;
+  font-family:'Tajawal',sans-serif; font-size:14px;
+  color:var(--text); background:var(--bg); outline:none; direction:rtl;
+}
+.f-input:focus, .f-select:focus { border-color:var(--primary); }
+.btn-primary {
+  width:100%; height:50px; background:var(--primary);
+  color:#fff; border:none; border-radius:12px;
+  font-family:'Tajawal',sans-serif; font-size:16px; font-weight:700;
+  cursor:pointer; margin-top:4px;
+}
+.btn-ghost {
+  width:100%; height:44px; background:transparent;
+  color:var(--muted); border:none; border-radius:12px;
+  font-family:'Tajawal',sans-serif; font-size:14px;
+  cursor:pointer; margin-top:6px;
+}
+
+/* ══ BOTTOM NAV ══ */
+.bottom-nav {
+  position:fixed; bottom:0; right:0; left:0; z-index:100;
+  height:var(--bottom-h);
+  background:var(--card);
+  border-top:1px solid var(--border);
+  display:flex;
+  box-shadow:0 -2px 8px rgba(0,0,0,0.07);
+}
+.nav-btn {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:3px; cursor:pointer;
+  font-size:11px; font-weight:600; color:var(--muted);
+  transition:color .18s;
+}
+.nav-btn .nav-icon { font-size:22px; }
+.nav-btn.active { color:var(--primary); }
+
+/* ══ TOAST ══ */
+.toast {
+  position:fixed; bottom:calc(var(--bottom-h) + 14px); left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:rgba(0,0,0,.78); color:#fff;
+  padding:9px 20px; border-radius:24px;
+  font-size:14px; opacity:0; transition:all .25s;
+  pointer-events:none; white-space:nowrap; z-index:300;
+}
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ══ LOGIN SHEET ══ */
+.login-overlay {
+  position : fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,.55);
+  display   : none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.login-overlay.show { display: flex; }
+
+.login-sheet {
+  background   : #fff;
+  border-radius: 22px 22px 0 0;
+  padding      : 20px 20px 36px;
+  width        : 100%;
+  max-width    : 480px;
+  animation    : slideUp .25s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0);    }
+}
+
+.login-room-title {
+  display    : flex;
+  align-items: center;
+  gap        : 8px;
+  font-size  : 16px;
+  font-weight: 700;
+  color      : var(--text);
+  margin-bottom: 16px;
+  justify-content: center;
+}
+
+/* التبويبات */
+.login-tabs {
+  display      : flex;
+  background   : #f0f0f8;
+  border-radius: 12px;
+  padding      : 4px;
+  gap          : 4px;
+  margin-bottom: 16px;
+}
+.login-tab {
+  flex       : 1;
+  text-align : center;
+  padding    : 9px 0;
+  border-radius: 9px;
+  font-size  : 13px;
+  font-weight: 600;
+  cursor     : pointer;
+  color      : #888;
+  transition : all .15s;
+}
+.login-tab.active {
+  background: #fff;
+  color     : var(--primary, #0099CC);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+
+/* حقول الإدخال */
+.login-input {
+  width        : 100%;
+  padding      : 13px 14px;
+  border-radius: 12px;
+  border       : 1.5px solid #e0e0e0;
+  font-size    : 14px;
+  font-family  : 'Tajawal', sans-serif;
+  background   : #fafafa;
+  margin-bottom: 10px;
+  display      : block;
+  text-align   : right;
+  direction    : rtl;
+  transition   : border-color .15s;
+}
+.login-input:focus {
+  outline     : none;
+  border-color: var(--primary, #0099CC);
+  background  : #fff;
+}
+
+/* الأزرار */
+.login-actions {
+  display: flex;
+  gap    : 10px;
+  margin-top: 6px;
+}
+.login-btn-cancel {
+  flex         : 1;
+  padding      : 13px;
+  border-radius: 12px;
+  border       : 1.5px solid #ddd;
+  background   : none;
+  color        : #666;
+  font-size    : 14px;
+  font-weight  : 600;
+  cursor       : pointer;
+  font-family  : 'Tajawal', sans-serif;
+}
+.login-btn-enter {
+  flex         : 2;
+  padding      : 13px;
+  border-radius: 12px;
+  border       : none;
+  background   : var(--primary, #0099CC);
+  color        : #fff;
+  font-size    : 14px;
+  font-weight  : 700;
+  cursor       : pointer;
+  font-family  : 'Tajawal', sans-serif;
+  transition   : opacity .15s;
+}
+.login-btn-enter:disabled { opacity: .6; cursor: not-allowed; }
+
+
+/* ══ LOGIN SHEET — أفاتار + ident + dropdown ══ */
+.login-avatar-row {
+  display    : flex;
+  align-items: center;
+  gap        : 10px;
+  margin-bottom: 10px;
+}
+.login-avatar-wrap {
+  position     : relative;
+  width        : 52px;
+  height       : 52px;
+  flex-shrink  : 0;
+  cursor       : pointer;
+}
+.login-avatar-img {
+  width        : 52px;
+  height       : 52px;
+  border-radius: 10px;
+  border       : 2.5px solid var(--primary,#0099CC);
+  object-fit   : cover;
+  display      : block;
+}
+.login-avatar-edit {
+  position  : absolute;
+  bottom    : -4px; right: -4px;
+  background: var(--primary,#0099CC);
+  color     : #fff;
+  border-radius: 50%;
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px;
+}
+.login-ident-wrap {
+  flex    : 1;
+  position: relative;
+}
+.login-input-ident {
+  padding-left: 36px !important;
+  margin-bottom: 0 !important;
+}
+.login-dropdown-arrow {
+  position  : absolute;
+  left      : 10px; top: 50%;
+  transform : translateY(-50%);
+  background: none; border: none;
+  font-size : 16px; color: #888;
+  cursor    : pointer; padding: 4px;
+  line-height: 1;
+}
+.login-saved-dropdown {
+  position  : absolute;
+  top       : calc(100% + 4px);
+  left      : 0; right: 0;
+  background: #fff;
+  border    : 1.5px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  z-index   : 50;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.login-saved-item {
+  display    : flex;
+  align-items: center;
+  gap        : 10px;
+  padding    : 10px 12px;
+  cursor     : pointer;
+  border-bottom: 1px solid #f5f5f5;
+  direction  : rtl;
+}
+.login-saved-item:last-child { border-bottom: none; }
+.login-saved-item:active { background: #f7f7ff; }
+.login-saved-item img {
+  width: 32px; height: 32px;
+  border-radius: 7px; object-fit: cover;
+  border: 2px solid #ddd;
+}
+.login-saved-name { font-size: 13px; font-weight: 600; color: #333; flex:1; }
+.login-saved-del  {
+  font-size: 14px; color: #ccc; padding: 2px 6px;
+  cursor: pointer;
+}
+.login-saved-del:hover { color: #e53935; }
+/* picker أفاتار -->  */
+.login-avatar-picker {
+  background   : #f5f5ff;
+  border-radius: 12px;
+  padding      : 8px;
+  margin-bottom: 10px;
+}
+.lap-grid {
+  display              : grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap                  : 5px;
+}
+.lap-opt {
+  width        : 100%;
+  aspect-ratio : 1 / 1;
+  border-radius: 8px;
+  border       : 2.5px solid transparent;
+  object-fit   : cover;
+  cursor       : pointer;
+  display      : block;
+}
+.lap-opt.selected { border-color: var(--primary,#0099CC); box-shadow: 0 0 0 1px var(--primary,#0099CC); }
+
+/* زر حفظ البيانات */
+.login-save-bar {
+  display    : flex;
+  align-items: center;
+  gap        : 10px;
+  margin     : 6px 0 10px;
+  direction  : rtl;
+}
+.login-save-btn {
+  width        : 38px;
+  height       : 38px;
+  border-radius: 10px;
+  border       : 1.5px solid #ddd;
+  background   : #f8f8ff;
+  font-size    : 18px;
+  cursor       : pointer;
+  display      : flex;
+  align-items  : center;
+  justify-content: center;
+  transition   : background .15s, border-color .15s;
+  flex-shrink  : 0;
+}
+.login-save-btn:active { background: #e8e8ff; border-color: var(--primary,#0099CC); }
+.login-save-btn.saved  { background: #e8ffe8; border-color: #27AE60; }
+.login-save-hint {
+  font-size : 12px;
+  color     : #999;
+}
+
+/* toast حفظ */
+.save-toast {
+  position     : fixed;
+  bottom       : 120px;
+  left         : 50%;
+  transform    : translateX(-50%);
+  background   : #333;
+  color        : #fff;
+  padding      : 8px 18px;
+  border-radius: 20px;
+  font-size    : 13px;
+  z-index      : 500;
+  opacity      : 0;
+  transition   : opacity .3s;
+  pointer-events: none;
+  white-space  : nowrap;
+}
+.save-toast.show { opacity: 1; }
+
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-right">
+    <span class="h-icon" onclick="logout()">🚪</span>
+  </div>
+  <div class="logo">Wid<span>B</span>id</div>
+  <div class="header-icons">
+    <span class="h-icon" onclick="showPane('search')">🔍</span>
+    <span class="h-icon notif-wrap" onclick="showPane('more')">
+      🔔<span class="notif-dot" id="notifDot"></span>
+    </span>
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- تبويب الغرف (الرئيسي) -->
+  <div class="pane active" id="pane-rooms">
+    <div class="total-bar">
+      <div class="total-stat">👥 <span class="val" id="totalUsers">0</span> مستخدم</div>
+      <div class="total-stat">💬 <span class="val" id="totalRooms">0</span> غرفة</div>
+    </div>
+    <div id="catList"></div>
+  </div>
+
+  <!-- تبويب داخل تصنيف -->
+  <div class="pane" id="pane-cat">
+    <div class="back-bar" onclick="showPane('rooms')">
+      <span class="back-icon">◀</span>
+      <span id="catTitle">الغرف</span>
+      <span class="cat-label" id="catStats"></span>
+    </div>
+    <div id="roomsList"></div>
+  </div>
+
+  <!-- تبويب المفضلة -->
+  <div class="pane" id="pane-fav">
+    <div id="favList"></div>
+  </div>
+
+  <!-- تبويب البحث -->
+  <div class="pane" id="pane-search">
+    <div class="search-wrap">
+      <div class="search-box">
+        <span class="s-icon">🔍</span>
+        <input id="searchInput" type="text" placeholder="ابحث عن غرفة..." oninput="doSearch()">
+        <span class="clear-x" id="clearX" onclick="clearSearch()">✕</span>
+      </div>
+    </div>
+    <div id="searchResults">
+      <div class="empty-state">
+        <div class="e-icon">🔍</div>
+        <p>اكتب اسم الغرفة أو رقمها</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- تبويب المزيد -->
+  <div class="pane" id="pane-more">
+    <div style="padding:16px;">
+
+      <!-- ═══ بطاقة الملف الشخصي ═══ -->
+      <div style="background:var(--card);border-radius:16px;padding:18px 16px;margin-bottom:14px;border:1px solid var(--border);display:flex;align-items:center;gap:14px;">
+        <!-- الأفاتار -->
+        <div id="myAvatarWrap" style="position:relative;width:64px;height:64px;border-radius:12px;border:3px solid #6C63FF;overflow:hidden;flex-shrink:0;cursor:pointer;" onclick="openAvatarPickerRooms()">
+          <img id="myAvatarImg" src="/avatars/av1.svg" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.src='/avatars/av1.svg'">
+          <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.4);text-align:center;font-size:10px;color:#fff;padding:2px 0;">تغيير</div>
+        </div>
+        <!-- الاسم -->
+        <div>
+          <div id="profileUsername" style="font-size:17px;font-weight:700;color:var(--text);">—</div>
+          <div id="profileRankLabel" style="font-size:12px;color:var(--muted);margin-top:2px;"></div>
+        </div>
+      </div>
+
+      <!-- ═══ Avatar Picker (داخل rooms.html) ═══ -->
+      <div id="avatarPickerRooms" style="display:none;background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;border:1px solid var(--border);">
+        <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;text-align:center;">🖼️ اختر صورتك</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;">
+          <img src="/avatars/av1.svg" class="av-opt" data-av="av1.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av2.svg" class="av-opt" data-av="av2.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av3.svg" class="av-opt" data-av="av3.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av4.svg" class="av-opt" data-av="av4.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av5.svg" class="av-opt" data-av="av5.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av6.svg" class="av-opt" data-av="av6.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av7.svg" class="av-opt" data-av="av7.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+          <img src="/avatars/av8.svg" class="av-opt" data-av="av8.svg" onclick="pickAvatar(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:3px solid transparent;cursor:pointer;">
+        </div>
+        <!-- زر رفع صورة — للمشتركين في باقة البروفايل فقط -->
+        <div id="uploadAvatarSection" style="display:none;">
+          <button onclick="document.getElementById('avatarFileRooms').click()"
+                  style="width:100%;padding:11px;border-radius:10px;border:none;background:#6C63FF;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px;">
+            📷 رفع صورة مخصصة
+          </button>
+          <input type="file" id="avatarFileRooms" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadAvatarRooms(event)">
+        </div>
+        <button onclick="document.getElementById('avatarPickerRooms').style.display='none'"
+                style="width:100%;padding:9px;background:none;border:1px solid #ddd;border-radius:10px;color:#666;font-size:13px;cursor:pointer;">
+          إغلاق
+        </button>
+      </div>
+
+      <div style="background:var(--card);border-radius:14px;overflow:hidden;border:1px solid var(--border);">
+        <div onclick="openMarket()"   style="padding:15px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;font-size:15px;font-weight:600;">🛒 <span>WidBid Market</span></div>
+        <div onclick="openPoints()"   style="padding:15px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;font-size:15px;font-weight:600;">💎 <span>نقاطي</span></div>
+        <div onclick="openSettings()" style="padding:15px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;font-size:15px;font-weight:600;">⚙️ <span>الإعدادات</span></div>
+        <div onclick="openSupport()"  style="padding:15px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;font-size:15px;font-weight:600;">💬 <span>خدمة العملاء</span></div>
+      </div>
+      <div style="margin-top:12px;background:var(--card);border-radius:14px;overflow:hidden;border:1px solid var(--border);">
+        <div onclick="logout()" style="padding:15px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;font-size:15px;font-weight:600;color:var(--danger);">🚪 <span>تسجيل الخروج</span></div>
+      </div>
+      <div style="margin-top:20px;text-align:center;color:var(--muted);font-size:12px;">WidBid v2 — بنية S11</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FAB — يظهر فقط للـ Owner (1100)+ -->
+<div class="fab" id="fab" data-min-rank="1100" onclick="openCreateModal()">＋</div>
+
+<!-- MODAL إنشاء غرفة -->
+<div class="overlay" id="overlay" onclick="closeModal(event)">
+  <div class="sheet">
+    <div class="sheet-title">➕ إنشاء غرفة جديدة</div>
+    <label class="f-label">اسم الغرفة</label>
+    <input class="f-input" id="newName" type="text" placeholder="أدخل اسم الغرفة">
+    <label class="f-label">التصنيف</label>
+    <select class="f-select" id="newCat"></select>
+    <label class="f-label">النوع</label>
+    <select class="f-select" id="newType">
+      <option value="public">🌐 عامة</option>
+      <option value="private">🔒 خاصة</option>
+    </select>
+    <button class="btn-primary" onclick="createRoom()">إنشاء الغرفة</button>
+    <button class="btn-ghost" onclick="closeModal()">إلغاء</button>
+  </div>
+</div>
+
+
+<!-- ══ LOGIN SHEET ══ -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-sheet">
+
+    <div class="login-room-title">
+      <span>🏠</span><span id="loginRoomName">الغرفة</span>
+    </div>
+
+    <div class="login-tabs">
+      <div class="login-tab active" id="tab-guest"  onclick="switchLoginTab('guest')">زائر</div>
+      <div class="login-tab"        id="tab-member" onclick="switchLoginTab('member')">عضو</div>
+      <div class="login-tab"        id="tab-super"  onclick="switchLoginTab('super')">عضو خارق</div>
+    </div>
+
+    <!-- ═══ صورة + حقل الاسم ═══ -->
+    <div class="login-avatar-row">
+      <div class="login-avatar-wrap" onclick="toggleLoginAvatarPicker()">
+        <img id="loginAvatarImg" src="/avatars/av1.svg" class="login-avatar-img" alt="avatar">
+        <div class="login-avatar-edit">✏️</div>
+      </div>
+      <div class="login-ident-wrap">
+        <input class="login-input login-input-ident" id="loginIdent" type="text"
+               placeholder="اسم المستخدم أو الإيميل" autocomplete="off" dir="auto"
+               oninput="filterSavedAccounts(this.value)"
+               onfocus="showSavedDropdown()"
+               onblur="setTimeout(hideSavedDropdown,200)">
+        <button class="login-dropdown-arrow" onclick="toggleSavedDropdown()" type="button">▾</button>
+        <div class="login-saved-dropdown" id="loginSavedDropdown" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- ═══ picker الأفاتار — 16 صورة مربعة ═══ -->
+    <div class="login-avatar-picker" id="loginAvatarPicker" style="display:none">
+      <div class="lap-grid" id="lapGrid"></div>
+    </div>
+
+    <!-- ═══ حقول إضافية ═══ -->
+    <div id="fields-guest"></div>
+
+    <div id="fields-member" style="display:none">
+      <input class="login-input" id="memberRoomPass" type="password"
+             placeholder="كلمة مرور الغرفة" required autocomplete="off">
+    </div>
+
+    <div id="fields-super" style="display:none">
+      <input class="login-input" id="superPass" type="password"
+             placeholder="كلمة مرور الاسم" autocomplete="current-password">
+      <input class="login-input" id="superRoomPass" type="password"
+             placeholder="كلمة مرور الغرفة (اختياري)">
+    </div>
+
+    <!-- ═══ زر حفظ / تعديل البيانات ═══ -->
+    <div class="login-save-bar">
+      <button class="login-save-btn" id="loginSaveBtn" onclick="saveLoginDetails()" title="حفظ تفاصيل الدخول">
+        💾
+      </button>
+      <span class="login-save-hint" id="loginSaveHint">احفظ بياناتك للدخول السريع</span>
+    </div>
+
+    <div class="login-actions">
+      <button class="login-btn-cancel" onclick="closeLoginSheet()">إلغاء</button>
+      <button class="login-btn-enter" id="loginEnterBtn" onclick="doEnterRoom()">دخول</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <div class="nav-btn active" id="nav-rooms" onclick="showPane('rooms')">
+    <span class="nav-icon">🏠</span>الغرف
+  </div>
+  <div class="nav-btn" id="nav-fav" onclick="showPane('fav')">
+    <span class="nav-icon">❤️</span>المفضلة
+  </div>
+  <div class="nav-btn" id="nav-search" onclick="showPane('search')">
+    <span class="nav-icon">🔍</span>بحث
+  </div>
+  <div class="nav-btn" id="nav-more" onclick="showPane('more')">
+    <span class="nav-icon">···</span>المزيد
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/guard.js"></script>
+<script>
+/* ══════════════════════════════════
+   STATE
+══════════════════════════════════ */
+const token  = localStorage.getItem('token')  || '';
+const userId = localStorage.getItem('user_id') || '';
+const rank   = parseInt(localStorage.getItem('rank') || '0');
+/* لا يوجد redirect — الدخول يتم عبر شاشة الغرفة */
+
+let allRooms   = [];
+let categories = [];
+let favorites  = JSON.parse(localStorage.getItem('wid_favs') || '[]');
+let currentPane = 'rooms';
+
+const EMOJIS = ['🏠','🌟','🎯','🎮','🎵','📚','☕','🌙','🌺','🎭','🏆','💫','🔥','💡','🎪'];
+const emo = id => EMOJIS[id % EMOJIS.length];
+const esc = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+/* ══ FAB visibility ══ */
+if (rank >= 1100) document.getElementById('fab').classList.add('visible');
+
+/* ══════════════════════════════════
+   PANE NAVIGATION
+══════════════════════════════════ */
+function showPane(name) {
+  ['rooms','cat','fav','search','more'].forEach(p => {
+    document.getElementById(`pane-${p}`).classList.toggle('active', p === name);
+  });
+  ['rooms','fav','search','more'].forEach(n => {
+    const el = document.getElementById(`nav-${n}`);
+    if (el) el.classList.toggle('active', n === name);
+  });
+  currentPane = name;
+  if (name === 'fav')    renderFav();
+  if (name === 'search') document.getElementById('searchInput').focus();
+}
+
+/* ══════════════════════════════════
+   LOAD CATEGORIES
+══════════════════════════════════ */
+async function loadCategories() {
+  const list = document.getElementById('catList');
+  // skeleton
+  list.innerHTML = Array(6).fill(`
+    <div class="skel-row">
+      <div class="skeleton" style="width:46px;height:46px;border-radius:50%;flex-shrink:0"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <div class="skeleton" style="height:15px;width:55%"></div>
+        <div class="skeleton" style="height:11px;width:38%"></div>
+      </div>
+    </div>`).join('');
+
+  try {
+    const r = await fetch('/api/rooms/categories/all', {
+      headers: token ? { Authorization: token } : {}
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error();
+    categories = d.categories || [];
+    renderCategories();
+    // تحميل كل الغرف للبحث والمفضلة في الخلفية
+    loadAllRooms();
+  } catch {
+    list.innerHTML = `<div class="empty-state">
+      <div class="e-icon">😕</div>
+      <p>تعذّر التحميل — اضغط للمحاولة</p>
+    </div>`;
+    list.querySelector('.empty-state').onclick = loadCategories;
+  }
+}
+
+function renderCategories() {
+  const list  = document.getElementById('catList');
+  let totalU  = 0, totalR = 0;
+  let html    = '';
+
+  categories.forEach(c => {
+    totalU += Number(c.user_count) || 0;
+    totalR += Number(c.room_count) || 0;
+    html   += `
+    <div class="cat-row" onclick="openCategory(${c.id},'${esc(c.name)}',${c.user_count},${c.room_count})">
+      <div class="cat-icon-wrap">${c.icon}</div>
+      <div class="cat-info">
+        <div class="cat-name">${esc(c.name)}</div>
+        <div class="cat-stats">
+          <span class="cat-stat">👥 ${c.user_count} مستخدم</span>
+          <span class="cat-stat">💬 ${c.room_count} غرفة</span>
+        </div>
+      </div>
+      <span class="cat-arrow">❯</span>
+    </div>`;
+  });
+
+  if (!html) html = `<div class="empty-state"><div class="e-icon">🏠</div><p>لا توجد تصنيفات بعد</p></div>`;
+  list.innerHTML = html;
+
+  document.getElementById('totalUsers').textContent = totalU;
+  document.getElementById('totalRooms').textContent = totalR;
+}
+
+/* ══════════════════════════════════
+   OPEN CATEGORY → ROOMS LIST
+══════════════════════════════════ */
+async function openCategory(catId, catName, userCount, roomCount) {
+  document.getElementById('catTitle').textContent = catName;
+  document.getElementById('catStats').textContent =
+    `${userCount} مستخدم · ${roomCount} غرفة`;
+
+  showPane('cat');
+
+  const list = document.getElementById('roomsList');
+  list.innerHTML = Array(3).fill(`
+    <div class="skel-row">
+      <div class="skeleton" style="width:46px;height:46px;border-radius:12px;flex-shrink:0"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <div class="skeleton" style="height:14px;width:60%"></div>
+        <div class="skeleton" style="height:11px;width:40%"></div>
+      </div>
+    </div>`).join('');
+
+  try {
+    const r = await fetch(`/api/rooms/by-category/${catId}`, { headers:{ Authorization: token } });
+    const d = await r.json();
+    if (!d.success) throw new Error();
+    const rooms = d.rooms || [];
+    if (!rooms.length) {
+      list.innerHTML = `<div class="empty-state"><div class="e-icon">🏠</div><p>لا توجد غرف في هذا التصنيف</p></div>`;
+      return;
+    }
+    list.innerHTML = rooms.map(r => buildRoomRow(r)).join('');
+  } catch {
+    list.innerHTML = `<div class="empty-state"><div class="e-icon">😕</div><p>تعذّر التحميل</p></div>`;
+  }
+}
+
+/* ══════════════════════════════════
+   ROOM ROW BUILDER
+══════════════════════════════════ */
+function buildRoomRow(room) {
+  const isFav  = favorites.includes(room.id);
+  const isPriv = room.type === 'private';
+  return `
+  <div class="room-row" onclick="enterRoom(${room.id},'${esc(room.name)}')">
+    <div class="room-icon">
+      ${emo(room.id)}
+      <div class="live-dot"></div>
+    </div>
+    <div class="room-info">
+      <div class="room-name">${esc(room.name)}</div>
+      <div class="room-meta">
+        <span>👥 ${room.member_count || 0}</span>
+        <span class="badge ${isPriv ? 'badge-priv':'badge-pub'}">${isPriv ? '🔒 خاصة':'🌐 عامة'}</span>
+        <span style="color:#bbb">#${room.id}</span>
+      </div>
+    </div>
+    <span class="fav-btn" onclick="toggleFav(event,${room.id})">${isFav ? '⭐':'☆'}</span>
+  </div>`;
+}
+
+/* ══════════════════════════════════
+   LOAD ALL ROOMS (للبحث والمفضلة)
+══════════════════════════════════ */
+async function loadAllRooms() {
+  try {
+    const r = await fetch('/api/rooms', { headers:{ Authorization: token } });
+    const d = await r.json();
+    if (d.success) allRooms = d.rooms || [];
+    // ملء select التصنيف في modal الإنشاء
+    const sel = document.getElementById('newCat');
+    sel.innerHTML = categories.map(c =>
+      `<option value="${c.id}">${c.icon} ${esc(c.name)}</option>`
+    ).join('');
+  } catch {}
+}
+
+/* ══════════════════════════════════
+   FAVORITES
+══════════════════════════════════ */
+function toggleFav(e, id) {
+  e.stopPropagation();
+  const idx = favorites.indexOf(id);
+  if (idx === -1) { favorites.push(id);    showToast('⭐ أُضيفت للمفضلة'); }
+  else            { favorites.splice(idx,1); showToast('حُذفت من المفضلة'); }
+  localStorage.setItem('wid_favs', JSON.stringify(favorites));
+  const btn  = e.target;
+  const isFav = favorites.includes(id);
+  btn.textContent = isFav ? '⭐' : '☆';
+  if (currentPane === 'fav') renderFav();
+}
+
+function renderFav() {
+  const list     = document.getElementById('favList');
+  const favRooms = allRooms.filter(r => favorites.includes(r.id));
+  if (!favRooms.length) {
+    list.innerHTML = `<div class="empty-state"><div class="e-icon">☆</div><p>لم تضف أي غرفة للمفضلة</p></div>`;
+    return;
+  }
+  list.innerHTML = favRooms.map(r => buildRoomRow(r)).join('');
+}
+
+/* ══════════════════════════════════
+   SEARCH
+══════════════════════════════════ */
+function doSearch() {
+  const q   = document.getElementById('searchInput').value.trim();
+  document.getElementById('clearX').style.display = q ? 'block' : 'none';
+  const res = document.getElementById('searchResults');
+  if (!q) {
+    res.innerHTML = `<div class="empty-state"><div class="e-icon">🔍</div><p>اكتب اسم الغرفة أو رقمها</p></div>`;
+    return;
+  }
+  const found = allRooms.filter(r =>
+    r.name.toLowerCase().includes(q.toLowerCase()) || String(r.id).includes(q)
+  );
+  res.innerHTML = found.length
+    ? found.map(r => buildRoomRow(r)).join('')
+    : `<div class="empty-state"><div class="e-icon">🔎</div><p>لا توجد نتائج لـ "${esc(q)}"</p></div>`;
+}
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('clearX').style.display = 'none';
+  doSearch();
+}
+
+/* ══════════════════════════════════
+   ENTER ROOM
+══════════════════════════════════ */
+/* enterRoom القديمة — تم الحذف */
+
+/* switchLoginTab moved to login sheet JS */
+
+/* closeLoginSheet v1 — تم الحذف */
+
+/* doEnterRoom moved to login sheet JS */
+
+/* ══════════════════════════════════
+   CREATE ROOM (Owner 1100+ فقط)
+══════════════════════════════════ */
+function openCreateModal() {
+  if (rank < 1100) { showToast('🚫 يحتاج صلاحية Owner'); return; }
+  document.getElementById('overlay').classList.add('show');
+}
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('overlay'))
+    document.getElementById('overlay').classList.remove('show');
+}
+async function createRoom() {
+  const name   = document.getElementById('newName').value.trim();
+  const cat_id = document.getElementById('newCat').value;
+  const type   = document.getElementById('newType').value;
+  if (!name) { showToast('⚠️ أدخل اسم الغرفة'); return; }
+  try {
+    const r = await fetch('/api/rooms/create', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', Authorization: token },
+      body: JSON.stringify({ name, type, category_id: cat_id, owner_id: userId })
+    });
+    const d = await r.json();
+    if (d.success) {
+      closeModal();
+      showToast('✅ تم إنشاء الغرفة');
+      document.getElementById('newName').value = '';
+      setTimeout(loadCategories, 800);
+    } else { showToast('⚠️ ' + (d.message || 'خطأ')); }
+  } catch { showToast('⚠️ تعذّر الإنشاء'); }
+}
+
+/* ══════════════════════════════════
+   MISC
+══════════════════════════════════ */
+function openMarket()   { showToast('🛒 WidBid Market — قريباً'); }
+function openPoints()   { showToast('💎 نقاطي — قريباً'); }
+function openSettings() { showToast('⚙️ الإعدادات — قريباً'); }
+function openSupport()  { showToast('💬 خدمة العملاء — قريباً'); }
+function logout() {
+  if (!confirm('هل تريد تسجيل الخروج؟')) return;
+  localStorage.clear();
+  window.location.href = '/';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ══ INIT ══ */
+loadCategories();
+</script>
+
+<script>
+/* ══ Avatar في rooms.html ══ */
+(function initRoomsAvatar() {
+  const token    = localStorage.getItem('token');
+  const username = localStorage.getItem('username') || '—';
+  const RANKS    = {100:'زائر',200:'عضو',300:'اسم محمي',400:'اسم ملكي',
+                    500:'مشرف',600:'مشرف عام',700:'ماستر',800:'سوبر ماستر',
+                    900:'روت',1000:'سوبر روت',1100:'أونر',1200:'سوبر أونر'};
+
+  /* اعرض الاسم فوراً */
+  const uEl = document.getElementById('profileUsername');
+  if (uEl) uEl.textContent = username;
+
+  if (!token) return;
+
+  /* جلب بيانات المستخدم */
+  fetch('/api/users/me', { headers: { 'Authorization': 'Bearer ' + token } })
+    .then(r => r.json())
+    .then(d => {
+      if (!d.success) return;
+      const u = d.user;
+
+      /* الاسم والرتبة */
+      if (uEl) uEl.textContent = u.username || username;
+      const rEl = document.getElementById('profileRankLabel');
+      const steps = [1200,1100,1000,900,800,700,600,500,400,300,200,100];
+      let rLabel = 'زائر';
+      for (const s of steps) { if ((u.rank||100) >= s) { rLabel = RANKS[s]; break; } }
+      if (rEl) rEl.textContent = rLabel;
+
+      /* الأفاتار */
+      const src = u.avatar
+        ? (u.avatar.startsWith('data:image') ? u.avatar : '/avatars/' + u.avatar)
+        : '/avatars/av1.svg';
+      const img = document.getElementById('myAvatarImg');
+      if (img) img.src = src;
+
+      /* زر رفع الصورة للمشتركين */
+      if (u.has_paid_profile) {
+        const sec = document.getElementById('uploadAvatarSection');
+        if (sec) sec.style.display = 'block';
+      }
+    })
+    .catch(() => {});
+})();
+
+function openAvatarPickerRooms() {
+  const picker = document.getElementById('avatarPickerRooms');
+  picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+}
+
+function pickAvatar(el) {
+  /* تحديد بصري */
+  document.querySelectorAll('.av-opt').forEach(i => i.style.borderColor = 'transparent');
+  el.style.borderColor = '#6C63FF';
+
+  const av    = el.dataset.av;
+  const token = localStorage.getItem('token');
+  if (!token) return;
+
+  fetch('/api/users/avatar/default', {
+    method : 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body   : JSON.stringify({ avatar: av }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      /* حدّث الصورة في البطاقة */
+      const img = document.getElementById('myAvatarImg');
+      if (img) img.src = '/avatars/' + av;
+      /* اغلق الـ picker بعد ثانية */
+      setTimeout(() => {
+        document.getElementById('avatarPickerRooms').style.display = 'none';
+      }, 600);
+    }
+  })
+  .catch(() => {});
+}
+
+function uploadAvatarRooms(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 500 * 1024) { alert('الصورة أكبر من 500KB'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const base64 = ev.target.result;
+    const token  = localStorage.getItem('token');
+    fetch('/api/users/avatar/upload', {
+      method : 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body   : JSON.stringify({ imageData: base64 }),
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        const img = document.getElementById('myAvatarImg');
+        if (img) img.src = base64;
+        document.getElementById('avatarPickerRooms').style.display = 'none';
+      } else {
+        alert(d.message || 'فشل الرفع');
+      }
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ══ LOGIN SHEET JS v2 ══ */
+const AV_COUNT = 16;
+let _loginAvatar = localStorage.getItem('lastAvatar') || 'av1.svg';
+
+/* ── init grid عند جاهزية DOM ── */
+function buildAvatarGrid() {
+  const grid = document.getElementById('lapGrid');
+  if (!grid || grid.children.length > 0) return; /* لا تبنِ مرتين */
+  for (let i = 1; i <= AV_COUNT; i++) {
+    const img = document.createElement('img');
+    img.src        = `/avatars/av${i}.svg`;
+    img.className  = 'lap-opt';
+    img.dataset.av = `av${i}.svg`;
+    img.onclick    = () => pickLoginAvatar(img);
+    grid.appendChild(img);
+  }
+  _updateLoginAvatarUI();
+}
+document.addEventListener('DOMContentLoaded', buildAvatarGrid);
+
+/* ── فتح شاشة الدخول ── */
+function enterRoom(id, name) {
+  window._pendingRoom = { id, name };
+  buildAvatarGrid(); /* تأكد من بناء الـ grid */
+  document.getElementById('loginRoomName').textContent = name;
+  _loginAvatar = localStorage.getItem('lastAvatar') || 'av1.svg';
+  _updateLoginAvatarUI();
+  document.getElementById('loginAvatarPicker').style.display = 'none';
+  const lastTab   = localStorage.getItem('lastLoginTab') || 'guest';
+  switchLoginTab(lastTab);
+  const lastIdent = localStorage.getItem('lastIdent') || '';
+  const el = document.getElementById('loginIdent');
+  if (el) el.value = lastIdent;
+  _updateSaveBtn();
+  document.getElementById('loginOverlay').classList.add('show');
+}
+
+function closeLoginSheet() {
+  document.getElementById('loginOverlay').classList.remove('show');
+  document.getElementById('loginAvatarPicker').style.display = 'none';
+  hideSavedDropdown();
+  window._pendingRoom = null;
+}
+
+/* ── تبويبات ── */
+function switchLoginTab(tab) {
+  ['guest','member','super'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('active', t === tab);
+  });
+  document.getElementById('fields-guest').style.display  = tab==='guest'  ? 'block':'none';
+  document.getElementById('fields-member').style.display = tab==='member' ? 'block':'none';
+  document.getElementById('fields-super').style.display  = tab==='super'  ? 'block':'none';
+  window._loginTab = tab;
+  localStorage.setItem('lastLoginTab', tab);
+  setTimeout(() => document.getElementById('loginIdent')?.focus(), 80);
+}
+
+/* ── أفاتار ── */
+function toggleLoginAvatarPicker() {
+  const p = document.getElementById('loginAvatarPicker');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function pickLoginAvatar(el) {
+  document.querySelectorAll('.lap-opt').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  _loginAvatar = el.dataset.av;
+  _updateLoginAvatarUI();
+  localStorage.setItem('lastAvatar', _loginAvatar);
+  document.getElementById('loginAvatarPicker').style.display = 'none';
+}
+
+function _updateLoginAvatarUI() {
+  const img = document.getElementById('loginAvatarImg');
+  if (img) img.src = '/avatars/' + _loginAvatar;
+  document.querySelectorAll('.lap-opt').forEach(el => {
+    el.classList.toggle('selected', el.dataset.av === _loginAvatar);
+  });
+}
+
+/* ── حفظ البيانات ── */
+function _getSavedAccounts() {
+  try { return JSON.parse(localStorage.getItem('savedAccounts') || '[]'); } catch { return []; }
+}
+
+function _saveToLocal(ident, avatar, tab, pass, roomPass) {
+  let accounts = _getSavedAccounts().filter(a => a.ident !== ident);
+  accounts.unshift({ ident, avatar, tab, pass: pass||'', roomPass: roomPass||'', ts: Date.now() });
+  if (accounts.length > 8) accounts = accounts.slice(0, 8);
+  localStorage.setItem('savedAccounts', JSON.stringify(accounts));
+}
+
+function saveLoginDetails() {
+  const ident = (document.getElementById('loginIdent')?.value || '').trim();
+  if (!ident) { _showSaveToast('⚠️ أدخل اسم المستخدم أولاً', false); return; }
+  const tab   = window._loginTab || 'guest';
+  const exists = _getSavedAccounts().some(a => a.ident === ident);
+  _saveToLocal(ident, _loginAvatar, tab);
+  localStorage.setItem('lastIdent', ident);
+  localStorage.setItem('lastAvatar', _loginAvatar);
+  _updateSaveBtn(true);
+  _showSaveToast(exists ? '✏️ تم تعديل البيانات' : '✅ تم حفظ البيانات');
+}
+
+function _updateSaveBtn(saved) {
+  const btn  = document.getElementById('loginSaveBtn');
+  const hint = document.getElementById('loginSaveHint');
+  const ident = (document.getElementById('loginIdent')?.value || '').trim();
+  const exists = _getSavedAccounts().some(a => a.ident === ident);
+  if (btn)  btn.classList.toggle('saved', exists || saved);
+  if (hint) hint.textContent = (exists || saved) ? 'بيانات محفوظة — اضغط للتعديل' : 'احفظ بياناتك للدخول السريع';
+}
+
+function _showSaveToast(msg) {
+  let t = document.getElementById('saveToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id        = 'saveToast';
+    t.className = 'save-toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ── dropdown حسابات محفوظة ── */
+function _deleteAccount(ident) {
+  const accounts = _getSavedAccounts().filter(a => a.ident !== ident);
+  localStorage.setItem('savedAccounts', JSON.stringify(accounts));
+  renderSavedDropdown('');
+  _updateSaveBtn();
+}
+
+function renderSavedDropdown(filter) {
+  const dd       = document.getElementById('loginSavedDropdown');
+  const accounts = _getSavedAccounts().filter(a =>
+    !filter || a.ident.toLowerCase().includes(filter.toLowerCase())
+  );
+  if (!accounts.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = accounts.map(a => `
+    <div class="login-saved-item" onclick="selectSavedAccount('${a.ident}','${a.avatar}','${a.tab}','${(a.pass||'').replace(/'/g,"\\'")}','${(a.roomPass||'').replace(/'/g,"\\'")}'  )">
+      <img src="/avatars/${a.avatar}" onerror="this.src='/avatars/av1.svg'">
+      <span class="login-saved-name">${a.ident}</span>
+      <span class="login-saved-del" onclick="event.stopPropagation();_deleteAccount('${a.ident}')">✕</span>
+    </div>`).join('');
+  dd.style.display = 'block';
+}
+
+function selectSavedAccount(ident, avatar, tab, pass, roomPass) {
+  document.getElementById('loginIdent').value = ident;
+  _loginAvatar = avatar || 'av1.svg';
+  _updateLoginAvatarUI();
+  switchLoginTab(tab || 'guest');
+  /* ملء كلمة المرور المحفوظة تلقائياً */
+  if (tab === 'member' && roomPass) {
+    setTimeout(() => {
+      const f = document.getElementById('memberRoomPass');
+      if (f) f.value = roomPass;
+    }, 50);
+  } else if (tab === 'super') {
+    setTimeout(() => {
+      if (pass) { const f = document.getElementById('superPass'); if(f) f.value = pass; }
+      if (roomPass) { const f = document.getElementById('superRoomPass'); if(f) f.value = roomPass; }
+    }, 50);
+  }
+  hideSavedDropdown();
+  _updateSaveBtn();
+}
+
+function showSavedDropdown()   { renderSavedDropdown(document.getElementById('loginIdent')?.value||''); }
+function hideSavedDropdown()   { document.getElementById('loginSavedDropdown').style.display='none'; }
+function toggleSavedDropdown() {
+  const dd = document.getElementById('loginSavedDropdown');
+  dd.style.display === 'none' ? showSavedDropdown() : hideSavedDropdown();
+}
+function filterSavedAccounts(v) { renderSavedDropdown(v); _updateSaveBtn(); }
+
+/* ── دخول الغرفة ── */
+async function doEnterRoom() {
+  const room = window._pendingRoom;
+  if (!room) return;
+  const tab   = window._loginTab || 'guest';
+  const btn   = document.getElementById('loginEnterBtn');
+  const ident = (document.getElementById('loginIdent')?.value || '').trim();
+  let password = '', roomPass = '';
+
+  if (!ident) { showToast('⚠️ أدخل اسم المستخدم'); return; }
+
+  if (tab === 'member') {
+    roomPass = document.getElementById('memberRoomPass')?.value || '';
+    if (!roomPass) { showToast('⚠️ أدخل كلمة مرور الغرفة'); return; }
+  } else if (tab === 'super') {
+    password = document.getElementById('superPass')?.value || '';
+    roomPass = document.getElementById('superRoomPass')?.value || '';
+    if (!password) { showToast('⚠️ أدخل كلمة المرور'); return; }
+  }
+
+  btn.disabled    = true;
+  btn.textContent = '⏳ جارٍ الدخول...';
+
+  try {
+    let d;
+    if (tab === 'guest') {
+      /* زائر — دخول بلا كلمة مرور */
+      const r = await fetch('/api/auth/guest', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ username: ident, room_id: room.id }),
+      });
+      d = await r.json();
+      if (!d.success) { showToast('⚠️ ' + (d.message || 'خطأ')); return; }
+
+    } else if (tab === 'member') {
+      /* عضو — بريد + كلمة مرور الغرفة */
+      const r = await fetch('/api/auth/room-entry', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ email: ident, room_id: room.id, room_password: roomPass }),
+      });
+      d = await r.json();
+      if (!d.success) { showToast('⚠️ ' + (d.message || 'كلمة مرور الغرفة خاطئة')); return; }
+
+    } else {
+      /* عضو خارق — بريد + كلمة مرور الاسم */
+      const hashPass = await _sha256(password);
+      const r = await fetch('/api/auth/login', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ email: ident, password: hashPass, hashed: true }),
+      });
+      d = await r.json();
+      if (!d.success) { showToast('⚠️ ' + (d.message || 'البريد أو كلمة مرور الاسم خاطئة')); return; }
+    }
+
+    localStorage.setItem('token',    d.token                      || '');
+    localStorage.setItem('user_id',  d.user_id  || d.user?.id    || 0);
+    localStorage.setItem('username', d.username || d.user?.username || ident);
+    localStorage.setItem('rank',     d.rank     || d.user?.rank   || 100);
+    localStorage.setItem('avatar',   _loginAvatar);
+    localStorage.setItem('room_id',   room.id);
+    localStorage.setItem('room_name', room.name);
+    if (roomPass) localStorage.setItem('room_pass', roomPass);
+    /* ── حفظ تلقائي مع كلمة المرور ── */
+    _saveToLocal(ident, _loginAvatar, tab, password, roomPass);
+    window.location.href = '/chat.html';
+
+  } catch (err) {
+    console.error('doEnterRoom:', err);
+    showToast('❌ تعذّر الاتصال بالسيرفر');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'دخول';
+  }
+}
+
+/* ── SHA-256 للتشفير الآمن ── */
+async function _sha256(text) {
+  const enc  = new TextEncoder();
+  const buf  = await crypto.subtle.digest('SHA-256', enc.encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+</script>
+
+</body>
+</html>

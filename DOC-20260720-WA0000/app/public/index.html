@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WidBid</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body {
+  height: 100%;
+  font-family: 'Tajawal', sans-serif;
+  background: linear-gradient(160deg, #2C3E7A 0%, #1a2a5e 40%, #4A90D9 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.splash {
+  text-align: center;
+  animation: fadeIn .4s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+.logo {
+  font-size: 48px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 3px;
+}
+.logo span { color: #F0A500; }
+.sub {
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+  margin-top: 8px;
+  margin-bottom: 32px;
+}
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid rgba(255,255,255,.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin: 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="splash">
+  <div class="logo">Wid<span>B</span>id</div>
+  <div class="sub">منصة الدردشة العربية</div>
+  <div class="spinner"></div>
+</div>
+
+<script>
+/* توجيه فوري لصفحة الغرف */
+window.location.replace('/rooms.html');
+</script>
+</body>
+</html>

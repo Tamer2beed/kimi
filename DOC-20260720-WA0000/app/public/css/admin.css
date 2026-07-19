@@ -1,0 +1,111 @@
+/* ════════════════════════════════════════
+   WidBid — Admin CSS
+   تصميم لوحات التحكم والأدوات الإدارية
+════════════════════════════════════════ */
+
+/* ══ ADMIN TOOLS SHEET ══ */
+.admin-sheet {
+  position:fixed; bottom:0; right:0; left:0; z-index:250;
+  background:var(--bg-card); border-radius:20px 20px 0 0;
+  padding:16px 16px 32px;
+  transform:translateY(100%); transition:transform .25s ease;
+  box-shadow:0 -4px 24px rgba(0,0,0,.18);
+  max-height:80vh; overflow-y:auto;
+}
+.admin-sheet.open { transform:translateY(0); }
+.admin-sheet-title {
+  font-size:15px; font-weight:700; color:var(--text-dark);
+  text-align:center; margin-bottom:14px;
+  padding-bottom:10px; border-bottom:1px solid var(--border);
+}
+.admin-tool {
+  display:flex; align-items:center; gap:12px;
+  padding:13px 4px; border-bottom:1px solid rgba(0,0,0,.06);
+  cursor:pointer; border-radius:var(--radius-sm);
+}
+.admin-tool:active { background:var(--bg-light); }
+.admin-tool .t-icon {
+  width:40px; height:40px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px; flex-shrink:0;
+}
+.admin-tool .t-name { font-size:14px; font-weight:600; color:var(--text-dark); }
+.admin-tool .t-desc { font-size:11px; color:var(--text-muted); margin-top:2px; }
+.admin-tool.danger .t-name { color:var(--danger); }
+
+/* ══ CONTEXT MENU ══ */
+.ctx-menu {
+  position:fixed; z-index:400; background:var(--bg-card);
+  border-radius:var(--radius-md); box-shadow:0 8px 32px rgba(0,0,0,.2);
+  overflow:hidden; min-width:200px;
+  animation:popIn .15s ease;
+}
+.ctx-header {
+  display:flex; align-items:center; gap:8px; padding:12px 14px;
+  background:var(--bg-light); border-bottom:1px solid var(--border);
+}
+.ctx-avatar {
+  width:36px; height:36px; border-radius:50%;
+  background:linear-gradient(135deg,var(--primary),var(--secondary));
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; font-weight:700; color:#fff; flex-shrink:0;
+}
+.ctx-username { font-size:13px; font-weight:700; color:var(--text-dark); }
+.ctx-rank     { font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px; margin-top:2px; display:inline-block; }
+.ctx-item {
+  display:flex; align-items:center; gap:10px; padding:12px 14px;
+  cursor:pointer; font-size:14px; font-weight:500;
+  color:var(--text-dark); border-bottom:1px solid rgba(0,0,0,.05);
+}
+.ctx-item:active { background:var(--bg-light); }
+.ctx-item.danger { color:var(--danger); }
+.ctx-item .ci-icon { font-size:18px; width:22px; text-align:center; }
+.ctx-no-action { padding:14px; text-align:center; font-size:13px; color:var(--text-muted); }
+
+/* ══ WARN DIALOG ══ */
+.warn-dialog {
+  position:fixed; inset:0; z-index:500;
+  background:rgba(0,0,0,.5); display:none;
+  align-items:center; justify-content:center; padding:20px;
+}
+.warn-dialog.show { display:flex; }
+.warn-box {
+  background:var(--bg-card); border-radius:var(--radius-lg);
+  padding:20px; width:100%; max-width:340px;
+  box-shadow:0 8px 32px rgba(0,0,0,.2); animation:popIn .2s ease;
+}
+.warn-box h3      { font-size:16px; font-weight:700; margin-bottom:12px; color:var(--text-dark); }
+.warn-box p       { font-size:12px; color:var(--text-muted); margin-bottom:8px; }
+.warn-box textarea {
+  width:100%; height:80px; border:1.5px solid var(--border);
+  border-radius:10px; padding:10px; resize:none; outline:none;
+  font-family:'Tajawal',sans-serif; font-size:13px; direction:rtl;
+}
+.warn-box textarea:focus { border-color:var(--warning); }
+.warn-actions { display:flex; gap:8px; margin-top:12px; }
+.warn-actions button {
+  flex:1; height:44px; border:none; border-radius:10px;
+  font-family:'Tajawal',sans-serif; font-size:14px; font-weight:600; cursor:pointer;
+}
+.btn-warn-send   { background:var(--warning); color:#fff; }
+.btn-warn-cancel { background:var(--bg-light); color:var(--text-muted); }
+
+/* ══ MASTER+ PANELS (مستقبلاً) ══ */
+.master-panel {
+  position:fixed; bottom:0; right:0; left:0; z-index:250;
+  background:var(--bg-card); border-radius:20px 20px 0 0;
+  padding:16px; transform:translateY(100%);
+  transition:transform .25s ease;
+  box-shadow:0 -4px 24px rgba(0,0,0,.18);
+}
+.master-panel.open { transform:translateY(0); }
+
+/* ══ شريط تقدم السعة ══ */
+.capacity-bar-wrap { margin-top:4px; }
+.capacity-bar {
+  height:4px; background:var(--border); border-radius:2px; overflow:hidden;
+}
+.capacity-fill { height:100%; border-radius:2px; transition:width .3s; }
+.capacity-low    { background:var(--success); }
+.capacity-medium { background:var(--warning); }
+.capacity-high   { background:var(--danger); }

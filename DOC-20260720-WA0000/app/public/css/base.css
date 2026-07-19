@@ -1,0 +1,46 @@
+/* ════════════════════════════════════════
+   WidBid — Base CSS v2
+════════════════════════════════════════ */
+:root {
+  --header-h:   54px;
+  --toolbar1-h: 50px;
+  --toolbar2-h: 42px;
+
+  --primary:   #6B7FD4;
+  --secondary: #5668C2;
+  --accent:    #F0A500;
+  --success:   #27AE60;
+  --danger:    #E74C3C;
+  --text-dark: #1A1A2E;
+  --text-muted:#7F8C8D;
+  --bg-card:   #FFFFFF;
+  --bg-light:  #F4F6F9;
+  --border:    #E0E6ED;
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.15);
+  --radius-sm: 8px;
+
+  /* theme (يُعاد تعريفها حسب ثيم الغرفة) */
+  --theme-bg:   #E8ECFF;
+  --theme-dark: #6B7FD4;
+
+  /* rank colors */
+  --rank-100: #95A5A6;
+  --rank-200: #3498DB;
+  --rank-300: #9B59B6;
+  --rank-400: #F1C40F;
+  --rank-500: #E67E22;
+  --rank-600: #E74C3C;
+  --rank-700: #1ABC9C;
+  --rank-800: #2ECC71;
+  --rank-900: #D35400;
+  --rank-1000:#C0392B;
+  --rank-1100:#8E44AD;
+  --rank-1200:#F0A500;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body {
+  height: 100%; overflow: hidden;
+  font-family: 'Tajawal', sans-serif;
+  direction: rtl;
+}
